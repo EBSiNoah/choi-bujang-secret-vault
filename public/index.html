@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BYTE BACK | 점령된 자료실</title>
+  <title>BYTE BACK | 자료실</title>
   <style>
     :root { color-scheme: dark; font-family: system-ui, sans-serif; }
     body { margin: 0; min-height: 100vh; background: #101a28; color: #ecf4ff; }
@@ -16,37 +16,129 @@
     li { border: 1px solid #51667c; border-radius: 14px; padding: 17px 19px; background: #1a2a3d; }
     strong { display: block; font-size: 18px; margin-bottom: 5px; }
     li span { color: #bfd0e5; }
+    form { display: grid; gap: 12px; max-width: 360px; margin: 24px 0; }
+    label { font-size: 14px; color: #bfd0e5; }
+    input { width: 100%; box-sizing: border-box; margin-top: 6px; padding: 11px 12px; font: inherit;
+      color: #ecf4ff; background: #1a2a3d; border: 1px solid #51667c; border-radius: 10px; }
+    button { padding: 11px 16px; font: inherit; font-weight: 700; color: #07202a;
+      background: #8ad8df; border: 0; border-radius: 10px; cursor: pointer; }
+    button.ghost { color: #ecf4ff; background: none; border: 1px solid #51667c; }
+    button:disabled { opacity: .6; cursor: wait; }
+    :focus-visible { outline: 2px solid #8ad8df; outline-offset: 2px; }
+    #msg { min-height: 1.4em; color: #ffb3c0; font-size: 15px; }
+    [hidden] { display: none !important; }
+    .bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .bar span { word-break: break-all; font-size: 14px; color: #bfd0e5; }
   </style>
 </head>
 <body>
   <main>
-    <div class="eyebrow">BYTE BACK · 1단계 피해 확인</div>
-    <h1>점령된 자료실</h1>
-    <p>지금은 보호 장치가 없는 상태입니다. 아래 기록은 모두 실습을 위해 만든 가상 자료입니다.</p>
-    <div class="notice">로그인하지 않은 방문자도 자료를 볼 수 있습니다. 공개 범위를 확인하고, 다음 제작 단계에서 접근을 차례로 막아 주세요.</div>
-    <ul id="notes" aria-live="polite"><li>가상 자료를 불러오는 중입니다.</li></ul>
+    <div class="eyebrow">BYTE BACK</div>
+    <h1>자료실</h1>
+
+    <!-- 로그인 전 -->
+    <section id="view-login">
+      <p>자료를 보려면 로그인하세요. 아래 기록은 모두 실습을 위해 만든 가상 자료입니다.</p>
+      <form id="login-form" novalidate>
+        <label>이메일
+          <input id="email" type="email" autocomplete="email" required>
+        </label>
+        <label>비밀번호
+          <input id="password" type="password" autocomplete="current-password" required>
+        </label>
+        <button id="login-btn" type="submit">로그인</button>
+      </form>
+    </section>
+
+    <!-- 로그인 후 -->
+    <section id="view-vault" hidden>
+      <div class="bar">
+        <span id="who"></span>
+        <button class="ghost" id="logout-btn" type="button">로그아웃</button>
+      </div>
+      <ul id="notes" aria-live="polite"></ul>
+    </section>
+
+    <p id="msg" role="status" aria-live="polite"></p>
   </main>
+
   <script type="module">
-    const list = document.querySelector('#notes');
-    try {
-      const response = await fetch('/api/notes', { cache: 'no-store' });
-      if (!response.ok) throw new Error('api response fail.');
-      const data = await response.json();
-      if (!Array.isArray(data.notes)) throw new Error('자료 형식이 맞지 않습니다.');
-      list.replaceChildren(...data.notes.map(note => {
-        const item = document.createElement('li');
-        const title = document.createElement('strong');
-        const content = document.createElement('span');
-        title.textContent = note.title;
-        content.textContent = note.content;
-        item.append(title, content);
-        return item;
-      }));
-    } catch (error) {
-      const item = document.createElement('li');
-      item.textContent = error.message;
-      list.replaceChildren(item);
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
+    // 공개해도 되는 값만 넣습니다 (Project Settings → API 의 URL, anon/publishable 키).
+    // service_role / SUPABASE_SECRET_KEY 는 절대 여기에 넣지 마세요.
+    const SUPABASE_URL = 'https://lcvrjogmyryihpkdpidf.supabase.co';
+    const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_Q7nCh0MfJP852pm8HdfvzQ_NUH5SWUI';
+    const sb = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+
+    const $ = (id) => document.getElementById(id);
+    const say = (text) => { $('msg').textContent = text; };
+
+    function showLogin() {
+      $('view-login').hidden = false;
+      $('view-vault').hidden = true;
+      $('notes').replaceChildren();
     }
+
+    async function showVault(session) {
+      $('view-login').hidden = true;
+      $('view-vault').hidden = false;
+      $('who').textContent = session.user.email;
+      await loadNotes(session.access_token);
+    }
+
+    async function loadNotes(token) {
+      const list = $('notes');
+      list.replaceChildren(Object.assign(document.createElement('li'), { textContent: '자료를 불러오는 중입니다.' }));
+      try {
+        const response = await fetch('/api/notes', {
+          cache: 'no-store',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (response.status === 401) {
+          await sb.auth.signOut();
+          say('로그인이 만료되었거나 권한이 없습니다. 다시 로그인하세요.');
+          return;
+        }
+        if (!response.ok) throw new Error('자료를 불러오지 못했습니다.');
+        const data = await response.json();
+        if (!Array.isArray(data.notes)) throw new Error('자료 형식이 맞지 않습니다.');
+        list.replaceChildren(...data.notes.map((note) => {
+          const item = document.createElement('li');
+          const title = document.createElement('strong');
+          const content = document.createElement('span');
+          title.textContent = note.title;
+          content.textContent = note.content;
+          item.append(title, content);
+          return item;
+        }));
+      } catch (error) {
+        list.replaceChildren(Object.assign(document.createElement('li'), { textContent: error.message }));
+      }
+    }
+
+    $('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = $('email').value.trim();
+      const password = $('password').value;
+      if (!email || !password) return say('이메일과 비밀번호를 입력하세요.');
+      $('login-btn').disabled = true; say('');
+      const { error } = await sb.auth.signInWithPassword({ email, password });
+      $('login-btn').disabled = false;
+      // 성공하면 아래 onAuthStateChange 가 화면을 전환합니다.
+      if (error) say('이메일 또는 비밀번호가 올바르지 않습니다.');
+    });
+
+    $('logout-btn').onclick = () => sb.auth.signOut();
+
+    // 로그인/로그아웃/토큰 갱신 때마다 화면을 맞춥니다.
+    // (콜백 안에서 다른 supabase 호출을 await 하면 교착될 수 있어 setTimeout 으로 뺍니다.)
+    sb.auth.onAuthStateChange((event, session) => {
+      setTimeout(() => {
+        if (!session) return showLogin();
+        if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') showVault(session);
+      }, 0);
+    });
   </script>
 </body>
 </html>
