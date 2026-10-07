@@ -34,7 +34,7 @@ export default async function handler(request, response) {
   try {
     const base = new URL(supabaseUrl);
     if (base.protocol !== 'https:') throw new Error();
-    endpoint = new URL('/rest/v1/training_notes', base);
+    endpoint = new URL('/rest/v1/memos', base);
     endpoint.searchParams.set('select', 'title,content');
     endpoint.searchParams.set('order', 'id.asc');
   } catch {
