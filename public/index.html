@@ -141,6 +141,19 @@
       }
     }
 
+    // 로그인 실패 이유를 구분해서 보여줍니다 (원인 파악용).
+    function loginErrorText(error) {
+      if (SUPABASE_URL.includes('YOUR-PROJECT-REF') || SUPABASE_PUBLISHABLE_KEY.includes('YOUR-ANON')) {
+        return '설정 필요: index.html 의 SUPABASE_URL 과 SUPABASE_PUBLISHABLE_KEY 를 본인 값으로 바꾸세요.';
+      }
+      const code = error.code || '';
+      if (code === 'email_not_confirmed') return '이메일 인증이 안 된 계정입니다. 대시보드에서 해당 사용자를 인증(Confirm) 처리하세요.';
+      if (code === 'invalid_credentials') return '이메일 또는 비밀번호가 올바르지 않습니다.';
+      if (code === 'email_provider_disabled') return 'Supabase 에서 Email 로그인이 꺼져 있습니다.';
+      if (error.status === 0 || /fetch|network/i.test(error.message || '')) return '서버에 연결하지 못했습니다. SUPABASE_URL 을 확인하세요.';
+      return `로그인하지 못했습니다. (${code || error.message})`;
+    }
+
     $('login-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const email = $('email').value.trim();
@@ -150,7 +163,10 @@
       const { error } = await sb.auth.signInWithPassword({ email, password });
       $('login-btn').disabled = false;
       // 성공하면 아래 onAuthStateChange 가 화면을 전환합니다.
-      if (error) say('이메일 또는 비밀번호가 올바르지 않습니다.');
+      if (error) {
+        console.error('login error:', error.code, error.status, error.message);
+        say(loginErrorText(error));
+      }
     });
 
     // ── 내 메모: 추가·수정·삭제 ──
