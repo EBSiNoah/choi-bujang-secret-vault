@@ -1,3 +1,20 @@
+import { readFileSync } from 'node:fs';
+import { createLoginVerifier } from '../src/verify-login.mjs';
+
+const config = JSON.parse(
+  readFileSync(new URL('../aleph.config.json', import.meta.url), 'utf8'),
+);
+
+// 서버 런타임에서 한 번만 만듭니다. 설정이 잘못되면 요청 때 500 으로 답합니다.
+let verifyLogin;
+function getVerifier() {
+  verifyLogin ??= createLoginVerifier({
+    config,
+    supabaseSecretKey: process.env.SUPABASE_SECRET_KEY,
+  });
+  return verifyLogin;
+}
+
 export default async function handler(request, response) {
   response.setHeader('Cache-Control', 'no-store');
 
@@ -14,49 +31,29 @@ export default async function handler(request, response) {
   }
 
   let endpoint;
-  let userEndpoint;
   try {
     const base = new URL(supabaseUrl);
     if (base.protocol !== 'https:') throw new Error();
     endpoint = new URL('/rest/v1/training_notes', base);
     endpoint.searchParams.set('select', 'title,content');
     endpoint.searchParams.set('order', 'id.asc');
-    userEndpoint = new URL('/auth/v1/user', base);
   } catch {
     return response.status(500).json({ error: 'SERVER_CONFIGURATION_ERROR' });
   }
 
-  // 로그인 확인: 브라우저가 보낸 Bearer 토큰을 Supabase Auth 에 물어 검증합니다.
-  // 토큰이 없거나 틀리거나 만료되면 자료를 읽기 전에 여기서 끝냅니다.
-  const match = /^Bearer\s+(\S+)$/i.exec(request.headers.authorization || '');
-  if (!match) {
-    return response.status(401).json({ error: 'LOGIN_REQUIRED' });
+  let verify;
+  try {
+    verify = getVerifier();
+  } catch {
+    return response.status(500).json({ error: 'SERVER_CONFIGURATION_ERROR' });
   }
 
-  try {
-    const authResponse = await fetch(userEndpoint, {
-      headers: {
-        apikey: secretKey,
-        Authorization: `Bearer ${match[1]}`,
-        Accept: 'application/json',
-      },
-      cache: 'no-store',
-      signal: AbortSignal.timeout(8000),
-    });
-
-    if (authResponse.status === 401 || authResponse.status === 403) {
-      return response.status(401).json({ error: 'LOGIN_REQUIRED' });
-    }
-    if (!authResponse.ok) {
-      return response.status(502).json({ error: 'AUTH_SERVICE_UNAVAILABLE' });
-    }
-
-    const user = await authResponse.json();
-    if (!user || typeof user.id !== 'string') {
-      return response.status(401).json({ error: 'LOGIN_REQUIRED' });
-    }
-  } catch {
-    return response.status(502).json({ error: 'AUTH_SERVICE_UNAVAILABLE' });
+  // 로그인 확인: Authorization 헤더의 토큰만 검사합니다.
+  // 요청의 userId·role 같은 값은 읽지 않습니다. 검사 결과(identity)만 믿습니다.
+  // 토큰이 없거나 검사에 실패하면 자료를 읽기 전에 거부합니다.
+  const identity = await verify(request.headers.authorization);
+  if (!identity) {
+    return response.status(401).json({ error: 'LOGIN_REQUIRED' });
   }
 
   try {
