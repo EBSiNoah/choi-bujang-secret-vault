@@ -18,7 +18,7 @@
     li span { color: #bfd0e5; }
     form { display: grid; gap: 12px; max-width: 360px; margin: 24px 0; }
     label { font-size: 14px; color: #bfd0e5; }
-    input { width: 100%; box-sizing: border-box; margin-top: 6px; padding: 11px 12px; font: inherit;
+    input, textarea { width: 100%; box-sizing: border-box; margin-top: 6px; padding: 11px 12px; font: inherit;
       color: #ecf4ff; background: #1a2a3d; border: 1px solid #51667c; border-radius: 10px; }
     button { padding: 11px 16px; font: inherit; font-weight: 700; color: #07202a;
       background: #8ad8df; border: 0; border-radius: 10px; cursor: pointer; }
@@ -26,6 +26,12 @@
     button:disabled { opacity: .6; cursor: wait; }
     :focus-visible { outline: 2px solid #8ad8df; outline-offset: 2px; }
     #msg { min-height: 1.4em; color: #ffb3c0; font-size: 15px; }
+    h2 { margin: 36px 0 0; font-size: 22px; }
+    #memo-form { max-width: none; }
+    textarea { resize: vertical; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; }
+    li .row { margin-top: 12px; }
+    li .row button { padding: 7px 12px; font-size: 14px; }
     [hidden] { display: none !important; }
     .bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
     .bar span { word-break: break-all; font-size: 14px; color: #bfd0e5; }
@@ -57,6 +63,21 @@
         <button class="ghost" id="logout-btn" type="button">로그아웃</button>
       </div>
       <ul id="notes" aria-live="polite"></ul>
+
+      <h2>내 메모</h2>
+      <form id="memo-form" novalidate>
+        <label>제목
+          <input id="memo-title" maxlength="200" required>
+        </label>
+        <label>내용
+          <textarea id="memo-body" rows="3" maxlength="5000"></textarea>
+        </label>
+        <div class="row">
+          <button id="memo-save" type="submit">메모 추가</button>
+          <button id="memo-cancel" class="ghost" type="button" hidden>취소</button>
+        </div>
+      </form>
+      <ul id="memos" aria-live="polite"></ul>
     </section>
 
     <p id="msg" role="status" aria-live="polite"></p>
@@ -67,8 +88,8 @@
 
     // 공개해도 되는 값만 넣습니다 (Project Settings → API 의 URL, anon/publishable 키).
     // service_role / SUPABASE_SECRET_KEY 는 절대 여기에 넣지 마세요.
-    const SUPABASE_URL = 'https://lcvrjogmyryihpkdpidf.supabase.co';
-    const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_Q7nCh0MfJP852pm8HdfvzQ_NUH5SWUI';
+    const SUPABASE_URL = 'https://YOUR-PROJECT-REF.supabase.co';
+    const SUPABASE_PUBLISHABLE_KEY = 'YOUR-ANON-OR-PUBLISHABLE-KEY';
     const sb = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
     const $ = (id) => document.getElementById(id);
@@ -78,6 +99,8 @@
       $('view-login').hidden = false;
       $('view-vault').hidden = true;
       $('notes').replaceChildren();
+      $('memos').replaceChildren();
+      resetMemoForm();
     }
 
     async function showVault(session) {
@@ -85,6 +108,7 @@
       $('view-vault').hidden = false;
       $('who').textContent = session.user.email;
       await loadNotes(session.access_token);
+      await loadMemos();
     }
 
     async function loadNotes(token) {
@@ -128,6 +152,102 @@
       // 성공하면 아래 onAuthStateChange 가 화면을 전환합니다.
       if (error) say('이메일 또는 비밀번호가 올바르지 않습니다.');
     });
+
+    // ── 내 메모: 추가·수정·삭제 ──
+    let editingId = null;
+
+    // 요청마다 최신 토큰을 꺼내 헤더에 실습니다. userId·role 은 보내지 않습니다.
+    async function api(path, options = {}) {
+      const { data } = await sb.auth.getSession();
+      const response = await fetch(path, {
+        cache: 'no-store',
+        ...options,
+        headers: {
+          Authorization: `Bearer ${data.session?.access_token}`,
+          ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+        },
+      });
+      if (response.status === 401) {
+        await sb.auth.signOut();
+        say('로그인이 만료되었거나 권한이 없습니다. 다시 로그인하세요.');
+      }
+      return response;
+    }
+
+    function resetMemoForm() {
+      editingId = null;
+      $('memo-form').reset();
+      $('memo-save').textContent = '메모 추가';
+      $('memo-cancel').hidden = true;
+    }
+
+    function renderMemo(memo) {
+      const item = document.createElement('li');
+      const title = document.createElement('strong');
+      const body = document.createElement('span');
+      const row = document.createElement('div');
+      const edit = document.createElement('button');
+      const del = document.createElement('button');
+      title.textContent = memo.title;
+      body.textContent = memo.body;
+      row.className = 'row';
+      Object.assign(edit, { type: 'button', className: 'ghost', textContent: '수정' });
+      Object.assign(del, { type: 'button', className: 'ghost', textContent: '삭제' });
+      edit.onclick = () => {
+        editingId = memo.id;
+        $('memo-title').value = memo.title;
+        $('memo-body').value = memo.body;
+        $('memo-save').textContent = '수정 저장';
+        $('memo-cancel').hidden = false;
+        $('memo-title').focus();
+      };
+      del.onclick = async () => {
+        if (!confirm('이 메모를 삭제할까요?')) return;
+        const response = await api(`/api/memos/${memo.id}`, { method: 'DELETE' });
+        if (!response.ok && response.status !== 404) {
+          if (response.status !== 401) say('메모를 삭제하지 못했습니다.');
+          return;
+        }
+        if (editingId === memo.id) resetMemoForm();
+        say('');
+        await loadMemos();
+      };
+      row.append(edit, del);
+      item.append(title, body, row);
+      return item;
+    }
+
+    async function loadMemos() {
+      const list = $('memos');
+      try {
+        const response = await api('/api/memos');
+        if (response.status === 401) return;
+        if (!response.ok) throw new Error('메모를 불러오지 못했습니다.');
+        const memos = await response.json();
+        if (!Array.isArray(memos)) throw new Error('메모 형식이 맞지 않습니다.');
+        list.replaceChildren(...memos.map(renderMemo));
+      } catch (error) {
+        list.replaceChildren(Object.assign(document.createElement('li'), { textContent: error.message }));
+      }
+    }
+
+    $('memo-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const title = $('memo-title').value.trim();
+      if (!title) return say('제목을 입력하세요.');
+      const payload = JSON.stringify({ title, body: $('memo-body').value });
+      const response = editingId
+        ? await api(`/api/memos/${editingId}`, { method: 'PUT', body: payload })
+        : await api('/api/memos', { method: 'POST', body: payload });
+      if (!response.ok) {
+        if (response.status !== 401) say('메모를 저장하지 못했습니다.');
+        return;
+      }
+      say('');
+      resetMemoForm();
+      await loadMemos();
+    });
+    $('memo-cancel').onclick = resetMemoForm;
 
     $('logout-btn').onclick = () => sb.auth.signOut();
 

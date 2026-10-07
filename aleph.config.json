@@ -9,7 +9,32 @@
     "jwksUrl": "https://lcvrjogmyryihpkdpidf.supabase.co/auth/v1/.well-known/jwks.json",
     "audience": "authenticated"
   },
-  "allowedRoutes": [],
+  "allowedRoutes": [
+    {
+      "method": "GET",
+      "path": "/api/notes"
+    },
+    {
+      "method": "GET",
+      "path": "/api/memos"
+    },
+    {
+      "method": "POST",
+      "path": "/api/memos"
+    },
+    {
+      "method": "GET",
+      "path": "/api/memos/:id"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/memos/:id"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/memos/:id"
+    }
+  ],
   "originalApiUrl": null,
   "restoreRoute": null
 }
