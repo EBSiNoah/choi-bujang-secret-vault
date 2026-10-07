@@ -35,6 +35,6 @@
       "path": "/api/memos/:id"
     }
   ],
-  "originalApiUrl": null,
+  "originalApiUrl": "https://lcvrjogmyryihpkdpidf.supabase.co/rest/v1/memos",
   "restoreRoute": null
 }
