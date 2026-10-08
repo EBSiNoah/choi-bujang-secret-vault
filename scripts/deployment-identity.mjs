@@ -19,6 +19,24 @@ function checkedOriginalApiUrl(value) {
   return value;
 }
 
+// 5단계: 서버가 받는 요청 경로. 설정에 있으면 형식을 검사해 그대로 기록합니다.
+// 항목은 "/api/notes" 또는 { method, path } 형태이고, 경로에는 쿼리·#·주소 전체를 쓰지 않습니다.
+const ROUTE_PATH = /^\/[A-Za-z0-9._~/:-]*$/u;
+const ROUTE_METHODS = new Set(['GET', 'POST', 'PUT', 'DELETE']);
+function validRoute(route) {
+  if (typeof route === 'string') return ROUTE_PATH.test(route);
+  return route !== null && typeof route === 'object'
+    && ROUTE_METHODS.has(route.method) && typeof route.path === 'string'
+    && ROUTE_PATH.test(route.path);
+}
+function checkedAllowedRoutes(value) {
+  if (value === null || value === undefined) return null;
+  if (!Array.isArray(value) || value.length > 50 || !value.every(validRoute)) {
+    throw new Error('allowedRoutes 는 "/경로" 또는 { method, path } 항목의 배열이어야 합니다.');
+  }
+  return value;
+}
+
 export function deploymentIdentity(env, config) {
   const owner = env.VERCEL_GIT_REPO_OWNER;
   const repo = env.VERCEL_GIT_REPO_SLUG;
@@ -35,6 +53,7 @@ export function deploymentIdentity(env, config) {
     throw new Error('배포 식별 정보를 확인할 수 없습니다. Vercel 시스템 환경변수와 1단계 시작 틀을 확인하세요.');
   }
   const originalApiUrl = checkedOriginalApiUrl(config.originalApiUrl);
+  const allowedRoutes = checkedAllowedRoutes(config.allowedRoutes);
   return {
     schema: 'aleph.defense.deployment.v1',
     step: 1,
@@ -43,5 +62,6 @@ export function deploymentIdentity(env, config) {
     publicAppUrl: `https://${host.toLowerCase()}`,
     judgeIssuer: config.judgeIssuer,
     ...(originalApiUrl ? { originalApiUrl } : {}),
+    ...(allowedRoutes ? { allowedRoutes } : {}),
   };
 }

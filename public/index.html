@@ -84,16 +84,13 @@
   </main>
 
   <script type="module">
-    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
-
-    // 공개해도 되는 값만 넣습니다 (Project Settings → API 의 URL, anon/publishable 키).
-    // service_role / SUPABASE_SECRET_KEY 는 절대 여기에 넣지 마세요.
-    const SUPABASE_URL = 'https://lcvrjogmyryihpkdpidf.supabase.co';
-    const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_Q7nCh0MfJP852pm8HdfvzQ_NUH5SWUI';
-    const sb = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
-
     const $ = (id) => document.getElementById(id);
     const say = (text) => { $('msg').textContent = text; };
+    const TOKEN_KEY = 'vault.token';   // sessionStorage: 탭을 닫으면 사라집니다
+    const EMAIL_KEY = 'vault.email';
+    let editingId = null;
+
+    const msgItem = (text) => Object.assign(document.createElement('li'), { textContent: text });
 
     function showLogin() {
       $('view-login').hidden = false;
@@ -103,27 +100,43 @@
       resetMemoForm();
     }
 
-    async function showVault(session) {
-      $('view-login').hidden = true;
-      $('view-vault').hidden = false;
-      $('who').textContent = session.user.email;
-      await loadNotes(session.access_token);
-      await loadMemos();
+    function logout(message = '') {
+      sessionStorage.removeItem(TOKEN_KEY);
+      sessionStorage.removeItem(EMAIL_KEY);
+      showLogin();
+      say(message);
     }
 
-    async function loadNotes(token) {
+    // 모든 자료 요청은 이 서버(/api/...)로만 보냅니다. 외부 서비스에 직접 요청하지 않으므로
+    // 화면 코드에는 어떤 키도 들어 있지 않습니다. userId·role 도 보내지 않습니다.
+    async function api(path, options = {}) {
+      const token = sessionStorage.getItem(TOKEN_KEY);
+      const response = await fetch(path, {
+        cache: 'no-store',
+        ...options,
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+        },
+      });
+      if (response.status === 401) logout('로그인이 만료되었거나 권한이 없습니다. 다시 로그인하세요.');
+      return response;
+    }
+
+    async function showVault() {
+      $('view-login').hidden = true;
+      $('view-vault').hidden = false;
+      $('who').textContent = sessionStorage.getItem(EMAIL_KEY) || '';
+      await loadNotes();
+      if (sessionStorage.getItem(TOKEN_KEY)) await loadMemos();
+    }
+
+    async function loadNotes() {
       const list = $('notes');
-      list.replaceChildren(Object.assign(document.createElement('li'), { textContent: '자료를 불러오는 중입니다.' }));
+      list.replaceChildren(msgItem('자료를 불러오는 중입니다.'));
       try {
-        const response = await fetch('/api/notes', {
-          cache: 'no-store',
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (response.status === 401) {
-          await sb.auth.signOut();
-          say('로그인이 만료되었거나 권한이 없습니다. 다시 로그인하세요.');
-          return;
-        }
+        const response = await api('/api/notes');
+        if (response.status === 401) return;
         if (!response.ok) throw new Error('자료를 불러오지 못했습니다.');
         const data = await response.json();
         if (!Array.isArray(data.notes)) throw new Error('자료 형식이 맞지 않습니다.');
@@ -137,21 +150,17 @@
           return item;
         }));
       } catch (error) {
-        list.replaceChildren(Object.assign(document.createElement('li'), { textContent: error.message }));
+        list.replaceChildren(msgItem(error.message));
       }
     }
 
-    // 로그인 실패 이유를 구분해서 보여줍니다 (원인 파악용).
-    function loginErrorText(error) {
-      if (SUPABASE_URL.includes('YOUR-PROJECT-REF') || SUPABASE_PUBLISHABLE_KEY.includes('YOUR-ANON')) {
-        return '설정 필요: index.html 의 SUPABASE_URL 과 SUPABASE_PUBLISHABLE_KEY 를 본인 값으로 바꾸세요.';
-      }
-      const code = error.code || '';
-      if (code === 'email_not_confirmed') return '이메일 인증이 안 된 계정입니다. 대시보드에서 해당 사용자를 인증(Confirm) 처리하세요.';
-      if (code === 'invalid_credentials') return '이메일 또는 비밀번호가 올바르지 않습니다.';
-      if (code === 'email_provider_disabled') return 'Supabase 에서 Email 로그인이 꺼져 있습니다.';
-      if (error.status === 0 || /fetch|network/i.test(error.message || '')) return '서버에 연결하지 못했습니다. SUPABASE_URL 을 확인하세요.';
-      return `로그인하지 못했습니다. (${code || error.message})`;
+    // ── 로그인 / 로그아웃 ──
+    function loginErrorText(status, code) {
+      if (code === 'EMAIL_NOT_CONFIRMED') return '이메일 인증이 안 된 계정입니다. 관리자에게 인증 처리를 요청하세요.';
+      if (status === 401) return '이메일 또는 비밀번호가 올바르지 않습니다.';
+      if (status === 429) return '요청이 너무 많습니다. 잠시 후 다시 시도하세요.';
+      if (status === 500) return '서버 설정 오류입니다. 서버 환경변수를 확인하세요.';
+      return `로그인하지 못했습니다. (${code || status})`;
     }
 
     $('login-form').addEventListener('submit', async (e) => {
@@ -159,37 +168,31 @@
       const email = $('email').value.trim();
       const password = $('password').value;
       if (!email || !password) return say('이메일과 비밀번호를 입력하세요.');
-      $('login-btn').disabled = true; say('');
-      const { error } = await sb.auth.signInWithPassword({ email, password });
-      $('login-btn').disabled = false;
-      // 성공하면 아래 onAuthStateChange 가 화면을 전환합니다.
-      if (error) {
-        console.error('login error:', error.code, error.status, error.message);
-        say(loginErrorText(error));
+      $('login-btn').disabled = true;
+      say('');
+      try {
+        const response = await fetch('/api/login', {
+          method: 'POST',
+          cache: 'no-store',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) return say(loginErrorText(response.status, data.error));
+        sessionStorage.setItem(TOKEN_KEY, data.access_token);
+        sessionStorage.setItem(EMAIL_KEY, data.email || email);
+        $('password').value = '';
+        await showVault();
+      } catch {
+        say('서버에 연결하지 못했습니다.');
+      } finally {
+        $('login-btn').disabled = false;
       }
     });
 
+    $('logout-btn').onclick = () => logout();
+
     // ── 내 메모: 추가·수정·삭제 ──
-    let editingId = null;
-
-    // 요청마다 최신 토큰을 꺼내 헤더에 실습니다. userId·role 은 보내지 않습니다.
-    async function api(path, options = {}) {
-      const { data } = await sb.auth.getSession();
-      const response = await fetch(path, {
-        cache: 'no-store',
-        ...options,
-        headers: {
-          Authorization: `Bearer ${data.session?.access_token}`,
-          ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-        },
-      });
-      if (response.status === 401) {
-        await sb.auth.signOut();
-        say('로그인이 만료되었거나 권한이 없습니다. 다시 로그인하세요.');
-      }
-      return response;
-    }
-
     function resetMemoForm() {
       editingId = null;
       $('memo-form').reset();
@@ -243,7 +246,7 @@
         if (!Array.isArray(memos)) throw new Error('메모 형식이 맞지 않습니다.');
         list.replaceChildren(...memos.map(renderMemo));
       } catch (error) {
-        list.replaceChildren(Object.assign(document.createElement('li'), { textContent: error.message }));
+        list.replaceChildren(msgItem(error.message));
       }
     }
 
@@ -265,16 +268,7 @@
     });
     $('memo-cancel').onclick = resetMemoForm;
 
-    $('logout-btn').onclick = () => sb.auth.signOut();
-
-    // 로그인/로그아웃/토큰 갱신 때마다 화면을 맞춥니다.
-    // (콜백 안에서 다른 supabase 호출을 await 하면 교착될 수 있어 setTimeout 으로 뺍니다.)
-    sb.auth.onAuthStateChange((event, session) => {
-      setTimeout(() => {
-        if (!session) return showLogin();
-        if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') showVault(session);
-      }, 0);
-    });
+    if (sessionStorage.getItem(TOKEN_KEY)) showVault(); else showLogin();
   </script>
 </body>
 </html>
