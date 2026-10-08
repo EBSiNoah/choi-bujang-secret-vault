@@ -1,154 +1,260 @@
-// MITRE ATT&CK T1110 패턴: 외부 의존성이나 파일 접근 없이 경보 하나를 판정합니다.
-const PATTERNS = Object.freeze([
-  Object.freeze({
-    name: '동일 출발 주소의 연속 로그인 실패',
-    condition: '짧은 시간 안에 같은 출발 주소에서 로그인 실패가 연속으로 관측될 때.',
-    evidence: 'MITRE ATT&CK T1110(Brute Force)은 반복적인 인증 시도로 유효한 자격 증명을 추측하는 공격을 다룬다.',
-  }),
-  Object.freeze({
-    name: '여러 계정에 대한 동일 비밀번호 대입',
-    condition: '짧은 시간 안에 여러 계정에 동일한 비밀번호가 시도된 것이 안전한 인증 신호로 확인될 때.',
-    evidence: 'MITRE ATT&CK T1110.003(Password Spraying)은 하나의 비밀번호를 여러 계정에 대입하는 기법이다.',
-  }),
-]);
+/**
+ * decide.mjs — Wazuh 경보를 무차별 대입 패턴과 맞춰 block / alert / record 로 판단한다.
+ *
+ * 근거는 두 가지로 제한한다.
+ *   1) 짧은 시간 같은 주소의 로그인 실패 연속   (same-source-burst, T1110.001)
+ *   2) 여러 계정에 같은 비밀번호 대입(스프레이) (password-spraying, T1110.003)
+ *
+ * 이 파일만으로 동작한다. 다른 파일이나 패키지를 불러오지 않고, 파일을 읽거나 쓰지 않으며,
+ * 바깥에 묻지 않는다. 패턴은 아래 상수(patterns.json 에서 옮긴 것)에 들어 있다.
+ *
+ * 사용: decide(alert) → { action: 'block' | 'alert' | 'record', confidence: 0~1, reason }
+ *   - alert: Wazuh 경보 한 건. 판단에는 timestamp, data.srcip, data.srcuser/data.accounts, data.count 만 쓴다.
+ *   - 패턴은 "같은 주소가 창 안에서 보낸 시도 전체"를 본다. 그래서 decide 는 이 모듈 안(메모리)에
+ *     최근 경보를 주소별로 기억해 두고, 호출할 때마다 현재 경보를 더해 계산한다.
+ *     (프로세스가 끝나면 사라지는 메모리일 뿐, 어디에도 기록하지 않는다.)
+ *   - 같은 경보를 다시 넣어도 두 번 세지 않는다(id, 없으면 시각·계정·건수로 구분).
+ *
+ * 확신도: 조건마다 0~1 점수를 매기고, 모든 조건이 맞아야 하므로 가장 낮은 점수를 쓴다.
+ *   - 기준선에 정확히 걸치면 0.7(애매). 기준을 넉넉히 넘어설수록 1 에 가까워진다.
+ *   - 기준에 못 미치면 못 미친 비율만큼 0.7 에서 깎인다.
+ *   - 0.85 이상 block, 0.5 이상 alert, 그 아래 record.
+ */
 
-const NO_MATCH = '일치하는 공격 패턴 없음';
-const SHORT_WINDOW_SECONDS = 300;
-const REPEATED_FAILURE_THRESHOLD = 5;
-const MULTI_ACCOUNT_THRESHOLD = 3;
+// ============================================================ 상수
 
-function isObject(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
+/** patterns.json 에서 옮긴 패턴(근거 두 가지만 남김). */
+const PATTERNS_FILE = Object.freeze({
+  schema: "aleph.xdr.patterns.v2",
+  moduleKey: "brute-force",
+  basis: {
+    framework: "MITRE ATT&CK",
+    technique: "T1110",
+    name: "Brute Force (무차별 대입)",
+    url: "https://attack.mitre.org/techniques/T1110/",
+    subTechniques: {
+      "T1110.001": "Password Guessing (비밀번호 추측)",
+      "T1110.003": "Password Spraying (비밀번호 스프레이)",
+    },
+  },
+  inputs: {
+    timestamp: { path: "timestamp", format: "ISO 8601 (오프셋 포함)" },
+    srcip: { path: "data.srcip" },
+    accounts: { paths: ["data.accounts", "data.srcuser"], type: "set" },
+    count: { path: "data.count", type: "integer", missing: 1 },
+  },
+  metrics: {
+    totalCount: "묶음 안 모든 경보의 count 합",
+    distinctAccounts: "묶음 안 accounts의 서로 다른 계정 수",
+    attemptsPerAccount: "totalCount / distinctAccounts",
+  },
+  grouping: { by: ["srcip"] },
+  patterns: [
+    {
+      id: "same-source-burst",
+      name: "같은 주소의 짧은 시간 로그인 실패 연속",
+      mitre: ["T1110.001"],
+      windowSeconds: 300,
+      conditions: [{ metric: "totalCount", op: ">=", value: 20, param: "minCount" }],
+      evidence: {
+        rationale:
+          "ATT&CK T1110은 올바른 자격 증명을 모를 때 가능한 조합을 반복해 시도하는 행위다. 자동화된 시도는 한 출발 주소에서 사람이 입력할 수 있는 속도보다 빠르게 실패를 쌓으므로, 짧은 창 안의 시도 횟수 급증이 가장 기본적인 관측 신호가 된다.",
+        references: [
+          "https://attack.mitre.org/techniques/T1110/",
+          "https://attack.mitre.org/techniques/T1110/001/",
+        ],
+      },
+    },
+    {
+      id: "password-spraying",
+      name: "여러 계정에 계정당 적은 횟수로 퍼진 시도",
+      mitre: ["T1110.003"],
+      windowSeconds: 3600,
+      conditions: [
+        { metric: "distinctAccounts", op: ">=", value: 5, param: "manyAccountsMin" },
+        { metric: "attemptsPerAccount", op: "<=", value: 3, param: "lowPerAccountMax" },
+      ],
+      evidence: {
+        rationale:
+          "ATT&CK T1110.003은 비밀번호 하나(또는 소수)를 많은 계정에 차례로 시도하는 방식이다. 계정당 시도를 적게 유지해 계정 잠금을 피하므로 한 계정만 보면 정상처럼 보이고, 출발 주소 기준으로 묶어야 드러난다. 같은 비밀번호인지는 경보로 알 수 없어 계정 수와 계정당 횟수의 형태로만 판단한다.",
+        references: ["https://attack.mitre.org/techniques/T1110/003/"],
+      },
+    },
+  ],
+});
+
+/** 확신도 → 행동 기준 */
+const BLOCK_AT = 0.85; // 이상이면 block
+const ALERT_AT = 0.5; // 이상이면 alert, 그 아래는 record
+
+/** 점수 계산 보조 값 */
+const BORDERLINE = 0.7; // 기준선에 정확히 걸칠 때의 점수
+const MATCH_FLOOR = 0.25; // 이보다 낮으면 reason 에서 패턴과 일치한다고 말하지 않는다
+
+/** 기억(메모리) 상한 */
+const MAX_EVENTS_PER_IP = 5000;
+const MAX_TRACKED_IPS = 10000;
+
+const METRIC_LABELS = {
+  totalCount: { label: "시도", unit: "건" },
+  distinctAccounts: { label: "대상 계정", unit: "개" },
+  attemptsPerAccount: { label: "계정당 시도", unit: "회" },
+};
+const OP_TEXT = { ">=": "이상", "<=": "이하" };
+
+const PATTERNS = PATTERNS_FILE.patterns;
+const MAX_WINDOW_SECONDS = Math.max(...PATTERNS.map((p) => p.windowSeconds));
+
+/** 주소별 최근 경보. 이 모듈 안에서만 쓰는 메모리. */
+const history = new Map();
+
+// ============================================================ 경보 읽기
+
+const text = (v) => (v === null || v === undefined ? "" : String(v).trim());
+
+/** ISO 8601 → 초 단위 시각. Wazuh 원본의 '+0900' 오프셋도 받는다. 읽을 수 없으면 null. */
+function toSeconds(v) {
+  const s = text(v).replace(/([+-]\d{2})(\d{2})$/, "$1:$2");
+  if (!s) return null;
+  const ms = Date.parse(s);
+  return Number.isNaN(ms) ? null : ms / 1000;
 }
 
-function firstObject(...values) {
-  return values.find(isObject) ?? {};
+function toCount(v) {
+  const s = text(v);
+  return /^\d+$/.test(s) ? Number(s) : PATTERNS_FILE.inputs.count.missing;
 }
 
-function positiveNumber(...values) {
-  for (const value of values) {
-    if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value;
-    if (typeof value === 'string' && value.trim() !== '') {
-      const parsed = Number(value);
-      if (Number.isFinite(parsed) && parsed > 0) return parsed;
-    }
-  }
-  return null;
+/** 경보 한 건에서 timestamp, srcip, accounts, count 를 뽑는다. 읽을 수 없으면 null. */
+function readEvent(alert) {
+  if (!alert || typeof alert !== "object") return null;
+  const src = alert.raw && typeof alert.raw === "object" ? alert.raw : alert;
+  const data = src.data && typeof src.data === "object" ? src.data : {};
+
+  const listed = Array.isArray(data.accounts) ? data.accounts : text(data.accounts).split(",");
+  const accounts = [...new Set([...listed, data.srcuser].map(text).filter(Boolean))];
+  const count = toCount(data.count);
+  const t = toSeconds(src.timestamp);
+  const ip = text(data.srcip);
+
+  const id = text(src.id);
+  const key = id ? `id:${id}` : `${text(src.timestamp)}|${accounts.join(",")}|${count}`;
+  return { ip, t, count, accounts, key };
 }
 
-function explicitTrue(...values) {
-  return values.some((value) => value === true || value === 1 ||
-    (typeof value === 'string' && /^(true|yes|1)$/i.test(value.trim())));
+// ============================================================ 주소별 기억
+
+/** 현재 경보를 기억에 더하고(중복이면 건너뜀), 오래된 것은 버린다. */
+function remember(ev) {
+  if (ev.t === null) return; // 시각이 없으면 묶을 수 없으므로 기억하지 않는다
+  let list = history.get(ev.ip);
+  if (!list) {
+    if (history.size >= MAX_TRACKED_IPS) history.delete(history.keys().next().value);
+    list = [];
+    history.set(ev.ip, list);
+  }
+  if (!list.some((e) => e.key === ev.key)) list.push(ev);
+
+  const cutoff = ev.t - MAX_WINDOW_SECONDS;
+  let kept = list.filter((e) => e.t >= cutoff);
+  if (kept.length > MAX_EVENTS_PER_IP) kept = kept.slice(-MAX_EVENTS_PER_IP);
+  history.set(ev.ip, kept);
 }
 
-function textOf(value) {
-  return typeof value === 'string' ? value.toLowerCase() : '';
+/** 현재 경보 시각을 끝으로 하는 창 안의 이 주소 경보들. */
+function windowEvents(ev, windowSeconds) {
+  if (ev.t === null) return [ev];
+  const list = history.get(ev.ip) ?? [ev];
+  return list.filter((e) => e.t <= ev.t && e.t >= ev.t - windowSeconds);
 }
 
-function decide(alert) {
-  if (!isObject(alert)) {
-    return { action: 'record', confidence: 0, reason: NO_MATCH };
+// ============================================================ 지표 · 점수
+
+function computeMetrics(events) {
+  const accounts = new Set();
+  let sum = 0;
+  for (const e of events) {
+    sum += e.count;
+    for (const a of e.accounts) accounts.add(a);
   }
-
-  const rule = firstObject(alert.rule);
-  const data = firstObject(alert.data);
-  const authData = firstObject(data.authentication, data.auth);
-  const groups = Array.isArray(rule.groups) ? rule.groups.filter((item) => typeof item === 'string') : [];
-  // 규칙 설명과 분류 필드만 살펴봅니다. 원문 로그·비밀번호 등은 읽거나 반환하지 않습니다.
-  const ruleText = [
-    rule.description,
-    rule.name,
-    ...groups,
-    rule.mitre?.id,
-  ].map(textOf).join(' ');
-  const eventText = [
-    alert.event,
-    alert.event_type,
-    alert.action,
-    alert.status,
-    data.event,
-    data.event_type,
-    data.action,
-    data.status,
-    authData.event,
-    authData.action,
-    authData.status,
-  ].map(textOf).join(' ');
-  const allSignalText = `${ruleText} ${eventText}`;
-
-  const hasFailure = /\b(fail(?:ed|ure)?|invalid|denied|unsuccessful|bad credentials?)\b|authentication failure|login failure|로그인 실패|인증 실패/.test(allSignalText);
-  const explicitBruteForce = /brute[\s_-]*force|password[\s_-]*spray(?:ing)?|무차별 대입|비밀번호 스프레이/.test(ruleText);
-  const explicitSpray = /password[\s_-]*spray(?:ing)?|same[\s_-]+password|동일한 비밀번호|같은 비밀번호|비밀번호 스프레이/.test(ruleText);
-
-  const sourceAddress = [data.srcip, data.source_ip, data.sourceAddress, alert.srcip, alert.source_ip]
-    .some((value) => typeof value === 'string' && value.trim() !== '');
-  const failureCount = positiveNumber(
-    rule.frequency,
-    data.failure_count, data.failed_attempts, data.attempt_count, data.count,
-    alert.failure_count, alert.failed_attempts, alert.attempt_count, alert.count,
-  );
-  const timeframe = positiveNumber(rule.timeframe, data.timeframe, alert.timeframe);
-  const accountCount = positiveNumber(
-    data.distinct_accounts, data.unique_accounts, data.account_count, data.accounts_count,
-    alert.distinct_accounts, alert.unique_accounts, alert.account_count, alert.accounts_count,
-    Array.isArray(data.accounts) ? data.accounts.length : null,
-    Array.isArray(alert.accounts) ? alert.accounts.length : null,
-  );
-  // 비밀번호 값 자체는 절대 비교하거나 결과에 넣지 않고, 명시적인 안전 신호만 확인합니다.
-  const samePasswordSignal = explicitTrue(
-    data.same_password, data.samePassword, data.password_reused,
-    authData.same_password, authData.samePassword, authData.password_reused,
-    alert.same_password, alert.samePassword, alert.password_reused,
-  );
-  const shortWindow = timeframe !== null && timeframe <= SHORT_WINDOW_SECONDS;
-  const enoughAccounts = accountCount !== null && accountCount >= MULTI_ACCOUNT_THRESHOLD;
-
-  if (hasFailure && shortWindow && enoughAccounts && (explicitSpray || samePasswordSignal)) {
-    return {
-      action: 'block',
-      confidence: 0.97,
-      reason: PATTERNS[1].name,
-    };
-  }
-
-  if (hasFailure && sourceAddress && failureCount !== null &&
-      failureCount >= REPEATED_FAILURE_THRESHOLD && shortWindow) {
-    return {
-      action: 'block',
-      confidence: 0.94,
-      reason: PATTERNS[0].name,
-    };
-  }
-
-  if (hasFailure && enoughAccounts && (explicitSpray || samePasswordSignal)) {
-    return {
-      action: 'alert',
-      confidence: 0.72,
-      reason: PATTERNS[1].name,
-    };
-  }
-
-  if (hasFailure && sourceAddress && failureCount !== null && failureCount >= 3) {
-    return {
-      action: 'alert',
-      confidence: 0.68,
-      reason: PATTERNS[0].name,
-    };
-  }
-
-  if (explicitSpray || explicitBruteForce) {
-    return {
-      action: 'alert',
-      confidence: 0.62,
-      reason: explicitSpray ? PATTERNS[1].name : PATTERNS[0].name,
-    };
-  }
-
-  return {
-    action: 'record',
-    confidence: hasFailure ? 0.2 : 0,
-    reason: NO_MATCH,
-  };
+  const distinctAccounts = accounts.size;
+  // 계정이 목록에 올랐다는 것은 최소 한 번은 시도했다는 뜻이므로 시도 합은 계정 수보다 작을 수 없다.
+  const totalCount = Math.max(sum, distinctAccounts);
+  const attemptsPerAccount = distinctAccounts > 0 ? totalCount / distinctAccounts : null;
+  return { totalCount, distinctAccounts, attemptsPerAccount };
 }
 
-export { decide };
+/**
+ * 조건 하나의 점수(0~1).
+ *   '>=' : 기준 이상이면 0.7 에서 시작해 기준의 2배에서 1. 못 미치면 비율만큼 0.7 에서 깎는다.
+ *   '<=' : 기준 이하이면 0.7 에서 시작해 계정당 1회에서 1. 넘으면 기준/값 비율만큼 깎는다.
+ */
+function conditionScore(value, op, limit) {
+  if (value === null || !Number.isFinite(value)) return 0;
+  if (op === ">=") {
+    if (value >= limit) return BORDERLINE + (1 - BORDERLINE) * Math.min((value - limit) / limit, 1);
+    return BORDERLINE * (Math.max(value, 0) / limit);
+  }
+  if (op === "<=") {
+    if (value > limit) return BORDERLINE * (limit / value);
+    if (limit <= 1) return 1;
+    return BORDERLINE + (1 - BORDERLINE) * ((limit - Math.max(value, 1)) / (limit - 1));
+  }
+  return 0;
+}
+
+/** 패턴 하나를 계산한다. 모든 조건이 맞아야 하므로 가장 낮은 점수가 확신도. */
+function scorePattern(pattern, ev) {
+  const metrics = computeMetrics(windowEvents(ev, pattern.windowSeconds));
+  const scores = pattern.conditions.map((c) => conditionScore(metrics[c.metric], c.op, c.value));
+  return { pattern, metrics, confidence: Math.min(...scores) };
+}
+
+const round = (n, digits) => Math.round(n * 10 ** digits) / 10 ** digits;
+const show = (n) => String(round(n, 1));
+
+/** 근거 한 줄. */
+function describe({ pattern, metrics }, ip, confidence) {
+  const parts = pattern.conditions.map((c) => {
+    const { label, unit } = METRIC_LABELS[c.metric];
+    const value = metrics[c.metric] === null ? "없음" : `${show(metrics[c.metric])}${unit}`;
+    return `${label} ${value}(기준 ${c.value}${unit} ${OP_TEXT[c.op]})`;
+  });
+  const where = `주소 ${ip}, ${pattern.windowSeconds}초 이내`;
+
+  if (confidence < MATCH_FLOOR) {
+    return `일치하는 패턴 없음 — ${where} 시도 ${show(metrics.totalCount)}건, 대상 계정 ${metrics.distinctAccounts}개`;
+  }
+  const verdict =
+    confidence >= BLOCK_AT ? "뚜렷하게 일치" : confidence >= ALERT_AT ? "부분적으로 일치" : "일부만 일치";
+  return `「${pattern.name}」(${pattern.mitre.join(", ")})과 ${verdict} — ${where} ${parts.join(", ")}`;
+}
+
+// ============================================================ 내보내기
+
+/**
+ * 경보 한 건을 판단한다.
+ * @param {object} alert Wazuh 경보
+ * @returns {{ action: 'block' | 'alert' | 'record', confidence: number, reason: string }}
+ */
+export function decide(alert) {
+  const ev = readEvent(alert);
+  if (!ev) {
+    return { action: "record", confidence: 0, reason: "경보를 읽을 수 없어 기록만 합니다." };
+  }
+  if (!ev.ip) {
+    return { action: "record", confidence: 0, reason: "출발 주소(srcip)가 없어 같은 주소 기준으로 묶을 수 없습니다." };
+  }
+
+  remember(ev);
+
+  let best = null;
+  for (const pattern of PATTERNS) {
+    const scored = scorePattern(pattern, ev);
+    if (best === null || round(scored.confidence, 4) > round(best.confidence, 4)) best = scored; // 동점이면 앞 패턴
+  }
+
+  const confidence = round(best.confidence, 2);
+  const action = confidence >= BLOCK_AT ? "block" : confidence >= ALERT_AT ? "alert" : "record";
+  return { action, confidence, reason: describe(best, ev.ip, confidence) };
+}

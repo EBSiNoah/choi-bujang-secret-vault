@@ -1,166 +1,269 @@
-// XDR 판정과 ZTNA 규칙 등록·알림 기록을 잇는 어댑터입니다.
-// 실제 ZTNA 런타임은 registerDenyRule(rule) 콜백으로 규칙을 등록해야 합니다.
-import { appendFile, mkdir } from 'node:fs/promises';
-import { isIP } from 'node:net';
-import { dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { decide } from '../fixtures/brute-force/decide.mjs';
+/**
+ * respond.mjs — decide 결과 가운데 차단 후보(block)만 ZTNA 판정기의 거부 규칙으로 넣고,
+ *               알림을 alerts.log 에 한 줄씩 쌓는다.
+ *
+ * 역할 나누기
+ *   - decide.mjs : 판단 결과만 돌려준다. 파일 쓰기·판정기 연결은 하지 않는다. (이 파일이 불러다 쓸 뿐, 고치지 않는다)
+ *   - respond.mjs: 판단 결과를 행동으로 옮긴다. 판정기에 규칙을 더하고, alerts.log 에 쓴다.
+ *
+ * 판정기(ztna)에 요구하는 것은 하나뿐이다.
+ *     ztna.addDenyRule(rule)   // 새 거부 규칙을 더한다. 동기/비동기 모두 가능. 실패하면 throw.
+ *   이 파일은 기존 규칙을 조회·수정·삭제하지 않는다. 오직 새 거부 규칙을 '더하기만' 한다.
+ *   rule 모양:
+ *     { id, effect: 'deny', scope: { srcIp }, createdAt, expiresAt,      // 시각은 ISO 8601(UTC)
+ *       evidence: { alertId }, confidence, reason, source: 'respond.mjs' }
+ *   만료(expiresAt)를 실제로 적용하는 것은 판정기의 몫이다.
+ *
+ * 정상 사용자를 막지 않기 위한 장치 (하나라도 걸리면 규칙을 넣지 않고 '보류'로 알린다)
+ *   1) decide 가 block 으로 판단한 경보만 대상이다. alert 는 알림만, record 는 아무것도 하지 않는다.
+ *   2) 규칙 범위는 출발 주소 하나뿐이다. 계정(사용자)은 절대 막지 않는다. 피해자 계정까지 잠기기 때문이다.
+ *   3) 근거 경보 번호(id)가 없으면 넣지 않는다.
+ *   4) 유효한 IP 가 아니거나 루프백·링크 로컬·멀티캐스트·미지정 주소면 넣지 않는다.
+ *   5) 사설·공유 주소(10/8, 172.16/12, 192.168/16, 100.64/10, fc00::/7)는 여러 사용자가 한 주소를 쓰는
+ *      경우가 많아 기본으로 넣지 않는다. allowPrivateTargets: true 로 풀 수 있다.
+ *   6) allowlist(IP 또는 IPv4 CIDR)와 isTrusted(ip) 콜백에 걸리면 넣지 않는다.
+ *      조직 자체의 공용 출구 주소, 관리자 주소, 판정기의 기존 허용 규칙에 있는 주소는 여기에 넣어야 한다.
+ *   7) 같은 주소의 규칙이 아직 유효하면 다시 넣지 않는다(재전송에도 한 번만).
+ */
 
-const ALERT_LOG_PATH = fileURLToPath(new URL('../alerts.log', import.meta.url));
-const DEFAULT_TTL_MS = 15 * 60 * 1000;
-const MAX_TTL_MS = 24 * 60 * 60 * 1000;
-const MIN_BLOCK_CONFIDENCE = 0.9;
-const ALERT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
+import { appendFileSync } from "node:fs";
+import { isIP } from "node:net";
+import { decide } from "./decide.mjs";
 
-function isObject(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
+// ============================================================ 상수
+
+const DEFAULT_LOG_PATH = "alerts.log";
+const DEFAULT_TTL_SECONDS = 3600; // 규칙 유효 시간
+const MAX_REMEMBERED = 10000; // 기억하는 주소·알림 수 상한
+
+/** [기준 주소, 접두 길이, 이름] — 규칙으로 막지 않는 주소 */
+const ALWAYS_PROTECTED_V4 = [
+  ["0.0.0.0", 8, "미지정 주소"],
+  ["127.0.0.0", 8, "루프백"],
+  ["169.254.0.0", 16, "링크 로컬"],
+  ["224.0.0.0", 4, "멀티캐스트"],
+  ["240.0.0.0", 4, "예약·브로드캐스트"],
+];
+/** 기본으로 막지 않는 사설·공유 주소(allowPrivateTargets 로 해제) */
+const PRIVATE_V4 = [
+  ["10.0.0.0", 8, "사설 주소"],
+  ["172.16.0.0", 12, "사설 주소"],
+  ["192.168.0.0", 16, "사설 주소"],
+  ["100.64.0.0", 10, "통신사 공유 주소"],
+];
+
+// ============================================================ 주소 도우미
+
+function v4ToInt(s) {
+  const p = s.split(".");
+  if (p.length !== 4) return null;
+  let n = 0;
+  for (const part of p) {
+    if (!/^\d{1,3}$/.test(part) || Number(part) > 255) return null;
+    n = n * 256 + Number(part);
+  }
+  return n;
 }
 
-function sourceAddressOf(alert) {
-  const data = isObject(alert.data) ? alert.data : {};
-  const candidates = [data.srcip, data.source_ip, data.sourceAddress, alert.srcip, alert.source_ip];
-  return candidates.find((value) => typeof value === 'string' && isIP(value.trim()) !== 0)?.trim() ?? null;
+function inCidr(ipInt, baseInt, bits) {
+  if (bits === 0) return true;
+  const mask = (0xffffffff << (32 - bits)) >>> 0;
+  return ((ipInt & mask) >>> 0) === ((baseInt & mask) >>> 0);
 }
 
-function hasSuccessfulLoginSignal(alert) {
-  const rule = isObject(alert.rule) ? alert.rule : {};
-  const data = isObject(alert.data) ? alert.data : {};
-  const auth = isObject(data.authentication) ? data.authentication
-    : isObject(data.auth) ? data.auth : {};
-  const text = [
-    rule.description, rule.name,
-    alert.event, alert.event_type, alert.action, alert.status,
-    data.event, data.event_type, data.action, data.status,
-    auth.event, auth.action, auth.status,
-  ].filter((value) => typeof value === 'string').join(' ').toLowerCase();
-
-  // "성공은 없습니다" 같은 부정 문구는 성공 신호로 보지 않습니다.
-  const saysNoSuccess = /성공\s*(?:은|이|한\s*적이)\s*없|no\s+successful\s+(?:login|authentication)|success(?:ful)?\s+(?:was\s+)?not\s+(?:observed|seen|recorded)/u.test(text);
-  if (saysNoSuccess) return false;
-
-  return /로그인\s*성공|인증\s*성공|로그인했습니다|인증되었습니다|성공했습니다|성공하였습니다|login\s+(?:success|succeeded|successful)|authentication\s+(?:success|succeeded|successful)|signed\s+in|authenticated\s+successfully|\b(?:login_success|authentication_success|authenticated)\b/u.test(text);
+/** IPv4-mapped IPv6(::ffff:a.b.c.d)는 IPv4 로 바꿔 본다. */
+function normalizeIp(ip) {
+  const s = String(ip ?? "").trim().toLowerCase();
+  const mapped = s.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  return mapped ? mapped[1] : s;
 }
 
-function alertIdOf(alert) {
-  return typeof alert?.id === 'string' && ALERT_ID_PATTERN.test(alert.id) ? alert.id : null;
-}
-
-function makeRule(alertId, sourceAddress, decision, expiresAt) {
-  return Object.freeze({
-    schema: 'aleph.ztna.deny-rule.v1',
-    ruleId: `xdr.brute-force.${alertId}`,
-    effect: 'deny',
-    match: Object.freeze({ sourceAddress }),
-    expiresAt,
-    evidenceAlertId: alertId,
-    reason: decision.reason,
+/** allowlist 항목(정확한 IP 또는 IPv4 CIDR)을 미리 해석한다. 잘못된 항목은 조용히 넘기지 않고 오류로 알린다. */
+function parseAllowlist(entries) {
+  return (entries ?? []).map((raw) => {
+    const entry = normalizeIp(raw);
+    if (entry.includes("/")) {
+      const [base, bitsText] = entry.split("/");
+      const baseInt = v4ToInt(base);
+      const bits = Number(bitsText);
+      if (baseInt === null || !Number.isInteger(bits) || bits < 0 || bits > 32) {
+        throw new RangeError(`allowlist 항목을 읽을 수 없습니다: ${raw}`);
+      }
+      return { cidr: [baseInt, bits] };
+    }
+    if (isIP(entry) === 0) throw new RangeError(`allowlist 항목을 읽을 수 없습니다: ${raw}`);
+    return { exact: entry };
   });
 }
 
-async function appendAlert(entry, logPath) {
-  await mkdir(dirname(logPath), { recursive: true });
-  await appendFile(logPath, `${JSON.stringify(entry)}\n`, 'utf8');
+/** 막으면 안 되는 주소면 이유를, 아니면 null. */
+function protectedReason(ip, { allowlist, allowPrivateTargets }) {
+  const version = isIP(ip);
+  if (version === 0) return "유효한 IP 주소가 아님";
+
+  const ipInt = version === 4 ? v4ToInt(ip) : null;
+
+  for (const rule of allowlist) {
+    if (rule.exact !== undefined && rule.exact === ip) return "allowlist 에 있는 주소";
+    if (rule.cidr && ipInt !== null && inCidr(ipInt, rule.cidr[0], rule.cidr[1])) return "allowlist 에 있는 주소";
+  }
+
+  if (version === 4) {
+    for (const [base, bits, name] of ALWAYS_PROTECTED_V4) if (inCidr(ipInt, v4ToInt(base), bits)) return name;
+    if (!allowPrivateTargets) {
+      for (const [base, bits, name] of PRIVATE_V4) if (inCidr(ipInt, v4ToInt(base), bits)) return `${name}(여러 사용자가 쓸 수 있음)`;
+    }
+    return null;
+  }
+
+  if (ip === "::" || ip === "::1") return ip === "::" ? "미지정 주소" : "루프백";
+  if (/^fe[89ab]/.test(ip)) return "링크 로컬";
+  if (ip.startsWith("ff")) return "멀티캐스트";
+  if (!allowPrivateTargets && /^f[cd]/.test(ip)) return "사설 주소(여러 사용자가 쓸 수 있음)";
+  return null;
 }
+
+// ============================================================ 시각 · 로그 도우미
+
+const pad = (n) => String(n).padStart(2, "0");
+
+/** 사람이 읽는 로그용: 이 시스템의 시간대 오프셋을 붙인 ISO 8601. */
+function localIso(ms) {
+  const offset = -new Date(ms).getTimezoneOffset();
+  const sign = offset >= 0 ? "+" : "-";
+  const abs = Math.abs(offset);
+  const local = new Date(ms + offset * 60000).toISOString().slice(0, 19);
+  return `${local}${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
+}
+
+/** 로그는 반드시 한 줄이어야 하므로 줄바꿈을 지운다. */
+const oneLine = (s) => String(s ?? "").replace(/[\r\n]+/g, " ").trim();
+
+/** 경보에서 출발 주소와 경보 번호를 읽는다(decide 와 같은 방식으로 raw 도 받는다). */
+function identify(alert) {
+  if (!alert || typeof alert !== "object") return { ip: "", alertId: "" };
+  const src = alert.raw && typeof alert.raw === "object" ? alert.raw : alert;
+  const data = src.data && typeof src.data === "object" ? src.data : {};
+  return {
+    ip: normalizeIp(data.srcip),
+    alertId: String(src.id ?? "").trim(),
+  };
+}
+
+/** 같은 키를 상한까지만 기억하는 집합 */
+function boundedSet() {
+  const set = new Set();
+  return {
+    has: (k) => set.has(k),
+    add(k) {
+      if (set.size >= MAX_REMEMBERED) set.delete(set.values().next().value);
+      set.add(k);
+    },
+  };
+}
+
+// ============================================================ 내보내기
 
 /**
- * 경보를 판정하고 block 후보만 ZTNA 등록기에 전달합니다.
- *
- * registerDenyRule은 ZTNA 런타임의 규칙 등록 함수여야 합니다. 규칙은 정확한 출발 IP만
- * 대상으로 하며, 정상 로그인 신호·불충분한 확신도·유효하지 않은 경보 ID/IP가 있으면
- * 등록하지 않습니다. 처리한 각 경보의 결과를 xdr/alerts.log에 JSON 한 줄로 추가합니다.
+ * 대응 연결을 만든다.
+ * @param {object} options
+ * @param {{ addDenyRule: (rule: object) => void | Promise<void> }} options.ztna  ZTNA 판정기(규칙 추가 함수 필요)
+ * @param {string}   [options.logPath='alerts.log']  알림을 쌓을 파일
+ * @param {number}   [options.ttlSeconds=3600]       규칙 유효 시간(초)
+ * @param {string[]} [options.allowlist=[]]          막지 않을 IP 또는 IPv4 CIDR
+ * @param {(ip: string) => boolean | Promise<boolean>} [options.isTrusted]  true 면 막지 않는다
+ * @param {boolean}  [options.allowPrivateTargets=false]  사설·공유 주소도 막도록 허용
+ * @param {() => number} [options.now]               현재 시각(ms). 시험용으로 바꿀 수 있다
+ * @returns {{ respond: (alert: object) => Promise<object> }}
  */
-export async function respond(alerts, {
-  registerDenyRule,
-  ttlMs = DEFAULT_TTL_MS,
-  now = () => new Date(),
-  logPath = ALERT_LOG_PATH,
-} = {}) {
-  if (!Array.isArray(alerts)) throw new TypeError('alerts 배열이 필요합니다.');
-  if (typeof registerDenyRule !== 'function') {
-    throw new TypeError('ZTNA registerDenyRule(rule) 콜백이 필요합니다.');
+export function createResponder(options = {}) {
+  const {
+    ztna,
+    logPath = DEFAULT_LOG_PATH,
+    ttlSeconds = DEFAULT_TTL_SECONDS,
+    allowlist: allowlistEntries = [],
+    isTrusted,
+    allowPrivateTargets = false,
+    now = () => Date.now(),
+  } = options;
+
+  if (!ztna || typeof ztna.addDenyRule !== "function") {
+    throw new TypeError("ztna.addDenyRule(rule) 함수가 필요합니다.");
   }
-  if (!Number.isSafeInteger(ttlMs) || ttlMs <= 0 || ttlMs > MAX_TTL_MS) {
-    throw new RangeError('ttlMs는 1밀리초부터 24시간 사이여야 합니다.');
+  if (!Number.isFinite(ttlSeconds) || ttlSeconds <= 0) {
+    throw new RangeError("ttlSeconds 는 0보다 큰 숫자여야 합니다.");
   }
-  if (typeof now !== 'function') throw new TypeError('now는 시각을 반환하는 함수여야 합니다.');
 
-  const results = [];
-  for (const alert of alerts) {
-    const alertId = alertIdOf(alert);
-    let decision;
+  const allowlist = parseAllowlist(allowlistEntries);
+  const activeUntil = new Map(); // 주소 → 우리가 넣은 규칙의 만료 시각(ms)
+  const notified = boundedSet(); // 같은 알림을 다시 쓰지 않기 위한 기억
+
+  /** alerts.log 에 한 줄 쌓는다. 같은 (구분, 주소, 경보 번호)는 한 번만. 쓰기 실패는 오류 문구로 돌려준다. */
+  function notify(kind, ip, alertId, fields, nowMs) {
+    const dedupeKey = `${kind}|${ip}|${alertId}`;
+    if (notified.has(dedupeKey)) return null;
+    notified.add(dedupeKey);
+    const line = [localIso(nowMs), kind, ip || "-", `경보 ${alertId || "-"}`, ...fields].map(oneLine).join(" | ");
     try {
-      decision = await decide(alert);
-    } catch {
-      const result = { alertId, action: 'record', registered: false, reason: 'decision_error' };
-      results.push(result);
-      await appendAlert({ timestamp: new Date().toISOString(), type: 'xdr_decision', ...result }, logPath);
-      continue;
+      appendFileSync(logPath, line + "\n", "utf8");
+      return null;
+    } catch (error) {
+      return `alerts.log 쓰기 실패: ${error.message}`;
+    }
+  }
+
+  async function respond(alert) {
+    const decision = decide(alert);
+    const nowMs = now();
+    const { ip, alertId } = identify(alert);
+    const tag = `확신도 ${decision.confidence.toFixed(2)}`;
+
+    if (decision.action === "record") return { decision, outcome: "recorded" };
+
+    if (decision.action === "alert") {
+      const logError = notify("주의", ip, alertId, [tag, decision.reason], nowMs);
+      return { decision, outcome: "notified", ...(logError && { logError }) };
     }
 
-    if (decision?.action !== 'block' ||
-        typeof decision.confidence !== 'number' ||
-        decision.confidence < MIN_BLOCK_CONFIDENCE) {
-      const result = { alertId, action: decision?.action ?? 'record', registered: false };
-      results.push(result);
-      await appendAlert({
-        timestamp: new Date().toISOString(),
-        type: 'xdr_decision',
-        ...result,
-      }, logPath);
-      continue;
-    }
-
-    const sourceAddress = isObject(alert) ? sourceAddressOf(alert) : null;
-    if (!alertId || !sourceAddress || hasSuccessfulLoginSignal(alert)) {
-      const result = {
-        alertId,
-        action: decision.action,
-        registered: false,
-        reason: !alertId ? 'invalid_alert_id'
-          : !sourceAddress ? 'missing_or_invalid_source_address'
-            : 'successful_login_signal',
-      };
-      results.push(result);
-      await appendAlert({ timestamp: new Date().toISOString(), type: 'xdr_decision', ...result }, logPath);
-      continue;
-    }
-
-    const currentTime = now();
-    const timestamp = currentTime instanceof Date ? currentTime.getTime() : Date.parse(currentTime);
-    if (!Number.isFinite(timestamp)) throw new TypeError('now()가 유효한 날짜를 반환해야 합니다.');
-    const expiresAt = new Date(timestamp + ttlMs).toISOString();
-    const rule = makeRule(alertId, sourceAddress, decision, expiresAt);
-
-    let registered;
-    try {
-      registered = await registerDenyRule(rule);
-    } catch {
-      const result = { alertId, action: decision.action, registered: false, reason: 'registration_error' };
-      results.push(result);
-      await appendAlert({ timestamp: new Date(timestamp).toISOString(), type: 'xdr_decision', ...result }, logPath);
-      continue;
-    }
-    if (registered === false) {
-      const result = { alertId, action: decision.action, registered: false, reason: 'registration_rejected' };
-      results.push(result);
-      await appendAlert({ timestamp: new Date(timestamp).toISOString(), type: 'xdr_decision', ...result }, logPath);
-      continue;
-    }
-
-    const notification = {
-      timestamp: new Date(timestamp).toISOString(),
-      type: 'ztna_deny_rule_registered',
-      ruleId: rule.ruleId,
-      evidenceAlertId: alertId,
-      expiresAt,
-      reason: decision.reason,
+    // ---- 여기부터 차단 후보(block) ----
+    const hold = async (why) => {
+      const logError = notify("보류", ip, alertId, [tag, `규칙을 넣지 않음: ${why}`, decision.reason], nowMs);
+      return { decision, outcome: "held", why, ...(logError && { logError }) };
     };
-    await appendAlert(notification, logPath);
 
-    results.push({ alertId, action: decision.action, registered: true, ruleId: rule.ruleId, expiresAt });
+    if (!alertId) return hold("근거 경보 번호 없음");
+    const blocked = protectedReason(ip, { allowlist, allowPrivateTargets });
+    if (blocked) return hold(blocked);
+    if (typeof isTrusted === "function" && (await isTrusted(ip))) return hold("신뢰 대상(isTrusted)");
+
+    const until = activeUntil.get(ip);
+    if (until !== undefined && until > nowMs) return { decision, outcome: "duplicate", expiresAt: new Date(until).toISOString() };
+
+    const expiresMs = nowMs + ttlSeconds * 1000;
+    const rule = {
+      id: `deny-${ip}-${Math.floor(nowMs / 1000)}`,
+      effect: "deny",
+      scope: { srcIp: ip },
+      createdAt: new Date(nowMs).toISOString(),
+      expiresAt: new Date(expiresMs).toISOString(),
+      evidence: { alertId },
+      confidence: decision.confidence,
+      reason: oneLine(decision.reason),
+      source: "respond.mjs",
+    };
+
+    try {
+      await ztna.addDenyRule(rule);
+    } catch (error) {
+      const logError = notify("실패", ip, alertId, [tag, `거부 규칙 추가 실패: ${error?.message ?? error}`, decision.reason], nowMs);
+      return { decision, outcome: "failed", error: String(error?.message ?? error), ...(logError && { logError }) };
+    }
+
+    if (activeUntil.size >= MAX_REMEMBERED) activeUntil.delete(activeUntil.keys().next().value);
+    activeUntil.set(ip, expiresMs);
+    const logError = notify("차단", ip, alertId, [tag, `만료 ${localIso(expiresMs)}`, decision.reason], nowMs);
+    return { decision, outcome: "denied", rule, ...(logError && { logError }) };
   }
 
-  return results;
+  return { respond };
 }
-
-export { ALERT_LOG_PATH, DEFAULT_TTL_MS };
