@@ -27,6 +27,16 @@
 
 명확한 공격은 `block`, 애매한 시도는 `alert`, 정상 이벤트는 `record` 입니다. 경보 원본은 고치지 않습니다.
 
+## 경보 내용 확인
+
+무차별 로그인 연습 경보의 시각·출발 주소·계정·규칙 수준·설명만 확인하려면 저장소 루트에서 `node xdr/brute-force/read-alerts.mjs` 를 실행합니다. 이 읽기 모듈은 판정기와 독립되어 있으며, 비밀처럼 보이는 문자열은 출력 전에 가립니다.
+
+## 차단 후보 연결
+
+`xdr/brute-force/respond.mjs`의 `createResponder({ ztna })`는 `decide(alert)`의 `block` 결과에 대해서만 `ztna.addDenyRule(rule)`을 호출합니다. 규칙은 출발 주소만 대상으로 하고, 만료 시각과 근거 경보 id를 포함합니다. `alert` 결과는 `xdr/alerts.log`에 알림으로 남고 `record`는 규칙을 만들지 않습니다. 기본 로그 경로는 이 저장소의 `xdr/alerts.log`이며, 실제 ZTNA 어댑터를 `ztna.addDenyRule`로 전달해야 합니다. 어댑터는 만료 시각을 실제 판정에 적용해야 합니다.
+
+fixture 재생의 규칙 추가와 정상 주소 통과 여부는 `node --test test/xdr-respond.test.mjs`로 확인합니다. 이는 격리된 가짜 ZTNA 규칙 저장소를 사용한 로컬 시험이며, 실제 운영 판정기 연결이나 배포를 의미하지 않습니다.
+
 ## 실행
 
 저장소 루트에서 항목 키 하나를 넣습니다.

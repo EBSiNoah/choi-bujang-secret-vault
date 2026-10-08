@@ -23,7 +23,7 @@
 
 // ============================================================ 상수
 
-/** patterns.json 에서 옮긴 패턴(근거 두 가지만 남김). */
+/** patterns.json 에서 옮긴 패턴과 입력 계약. */
 const PATTERNS_FILE = Object.freeze({
   schema: "aleph.xdr.patterns.v2",
   moduleKey: "brute-force",
@@ -58,7 +58,7 @@ const PATTERNS_FILE = Object.freeze({
       conditions: [{ metric: "totalCount", op: ">=", value: 20, param: "minCount" }],
       evidence: {
         rationale:
-          "ATT&CK T1110은 올바른 자격 증명을 모를 때 가능한 조합을 반복해 시도하는 행위다. 자동화된 시도는 한 출발 주소에서 사람이 입력할 수 있는 속도보다 빠르게 실패를 쌓으므로, 짧은 창 안의 시도 횟수 급증이 가장 기본적인 관측 신호가 된다.",
+          "MITRE ATT&CK T1110은 인증 성공 전까지 자격 증명을 반복 시도하는 무차별 대입을 다루므로, 같은 출발 주소에서 짧은 창에 실패가 몰리는 현상은 반복 시도의 근거가 된다.",
         references: [
           "https://attack.mitre.org/techniques/T1110/",
           "https://attack.mitre.org/techniques/T1110/001/",
@@ -67,7 +67,7 @@ const PATTERNS_FILE = Object.freeze({
     },
     {
       id: "password-spraying",
-      name: "여러 계정에 계정당 적은 횟수로 퍼진 시도",
+      name: "한 출발 주소가 여러 계정에 비밀번호를 적은 횟수로 대입",
       mitre: ["T1110.003"],
       windowSeconds: 3600,
       conditions: [
@@ -76,7 +76,7 @@ const PATTERNS_FILE = Object.freeze({
       ],
       evidence: {
         rationale:
-          "ATT&CK T1110.003은 비밀번호 하나(또는 소수)를 많은 계정에 차례로 시도하는 방식이다. 계정당 시도를 적게 유지해 계정 잠금을 피하므로 한 계정만 보면 정상처럼 보이고, 출발 주소 기준으로 묶어야 드러난다. 같은 비밀번호인지는 경보로 알 수 없어 계정 수와 계정당 횟수의 형태로만 판단한다.",
+          "MITRE ATT&CK T1110.003은 하나 또는 소수의 비밀번호를 여러 계정에 시도하는 방식이며, 이 경보는 비밀번호 자체를 제공하지 않으므로 여러 계정에 적은 횟수로 퍼진 형태만 간접 신호로 본다.",
         references: ["https://attack.mitre.org/techniques/T1110/003/"],
       },
     },
@@ -94,13 +94,6 @@ const MATCH_FLOOR = 0.25; // 이보다 낮으면 reason 에서 패턴과 일치�
 /** 기억(메모리) 상한 */
 const MAX_EVENTS_PER_IP = 5000;
 const MAX_TRACKED_IPS = 10000;
-
-const METRIC_LABELS = {
-  totalCount: { label: "시도", unit: "건" },
-  distinctAccounts: { label: "대상 계정", unit: "개" },
-  attemptsPerAccount: { label: "계정당 시도", unit: "회" },
-};
-const OP_TEXT = { ">=": "이상", "<=": "이하" };
 
 const PATTERNS = PATTERNS_FILE.patterns;
 const MAX_WINDOW_SECONDS = Math.max(...PATTERNS.map((p) => p.windowSeconds));
@@ -211,24 +204,6 @@ function scorePattern(pattern, ev) {
 }
 
 const round = (n, digits) => Math.round(n * 10 ** digits) / 10 ** digits;
-const show = (n) => String(round(n, 1));
-
-/** 근거 한 줄. */
-function describe({ pattern, metrics }, ip, confidence) {
-  const parts = pattern.conditions.map((c) => {
-    const { label, unit } = METRIC_LABELS[c.metric];
-    const value = metrics[c.metric] === null ? "없음" : `${show(metrics[c.metric])}${unit}`;
-    return `${label} ${value}(기준 ${c.value}${unit} ${OP_TEXT[c.op]})`;
-  });
-  const where = `주소 ${ip}, ${pattern.windowSeconds}초 이내`;
-
-  if (confidence < MATCH_FLOOR) {
-    return `일치하는 패턴 없음 — ${where} 시도 ${show(metrics.totalCount)}건, 대상 계정 ${metrics.distinctAccounts}개`;
-  }
-  const verdict =
-    confidence >= BLOCK_AT ? "뚜렷하게 일치" : confidence >= ALERT_AT ? "부분적으로 일치" : "일부만 일치";
-  return `「${pattern.name}」(${pattern.mitre.join(", ")})과 ${verdict} — ${where} ${parts.join(", ")}`;
-}
 
 // ============================================================ 내보내기
 
@@ -245,6 +220,9 @@ export function decide(alert) {
   if (!ev.ip) {
     return { action: "record", confidence: 0, reason: "출발 주소(srcip)가 없어 같은 주소 기준으로 묶을 수 없습니다." };
   }
+  if (ev.t === null) {
+    return { action: "record", confidence: 0, reason: "시각(timestamp)이 없어 패턴 시간 창을 확인할 수 없습니다." };
+  }
 
   remember(ev);
 
@@ -256,5 +234,6 @@ export function decide(alert) {
 
   const confidence = round(best.confidence, 2);
   const action = confidence >= BLOCK_AT ? "block" : confidence >= ALERT_AT ? "alert" : "record";
-  return { action, confidence, reason: describe(best, ev.ip, confidence) };
+  const reason = confidence >= MATCH_FLOOR ? best.pattern.name : "일치하는 패턴 없음";
+  return { action, confidence, reason };
 }

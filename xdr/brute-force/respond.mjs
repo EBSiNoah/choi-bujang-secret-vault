@@ -1,10 +1,10 @@
 /**
  * respond.mjs — decide 결과 가운데 차단 후보(block)만 ZTNA 판정기의 거부 규칙으로 넣고,
- *               알림을 alerts.log 에 한 줄씩 쌓는다.
+ *               알림을 xdr/alerts.log 에 한 줄씩 쌓는다.
  *
  * 역할 나누기
  *   - decide.mjs : 판단 결과만 돌려준다. 파일 쓰기·판정기 연결은 하지 않는다. (이 파일이 불러다 쓸 뿐, 고치지 않는다)
- *   - respond.mjs: 판단 결과를 행동으로 옮긴다. 판정기에 규칙을 더하고, alerts.log 에 쓴다.
+ *   - respond.mjs: 판단 결과를 행동으로 옮긴다. 판정기에 규칙을 더하고, xdr/alerts.log 에 쓴다.
  *
  * 판정기(ztna)에 요구하는 것은 하나뿐이다.
  *     ztna.addDenyRule(rule)   // 새 거부 규칙을 더한다. 동기/비동기 모두 가능. 실패하면 throw.
@@ -28,13 +28,15 @@
 
 import { appendFileSync } from "node:fs";
 import { isIP } from "node:net";
+import { fileURLToPath } from "node:url";
 import { decide } from "./decide.mjs";
 
 // ============================================================ 상수
 
-const DEFAULT_LOG_PATH = "alerts.log";
+const DEFAULT_LOG_PATH = fileURLToPath(new URL("../alerts.log", import.meta.url));
 const DEFAULT_TTL_SECONDS = 3600; // 규칙 유효 시간
 const MAX_REMEMBERED = 10000; // 기억하는 주소·알림 수 상한
+const SAFE_ALERT_ID = /^(?:\d{1,20}|[A-Za-z]{1,8}-\d{1,12})$/;
 
 /** [기준 주소, 접두 길이, 이름] — 규칙으로 막지 않는 주소 */
 const ALWAYS_PROTECTED_V4 = [
@@ -144,9 +146,10 @@ function identify(alert) {
   if (!alert || typeof alert !== "object") return { ip: "", alertId: "" };
   const src = alert.raw && typeof alert.raw === "object" ? alert.raw : alert;
   const data = src.data && typeof src.data === "object" ? src.data : {};
+  const rawAlertId = String(src.id ?? "").trim();
   return {
     ip: normalizeIp(data.srcip),
-    alertId: String(src.id ?? "").trim(),
+    alertId: SAFE_ALERT_ID.test(rawAlertId) ? rawAlertId : "",
   };
 }
 
@@ -168,7 +171,7 @@ function boundedSet() {
  * 대응 연결을 만든다.
  * @param {object} options
  * @param {{ addDenyRule: (rule: object) => void | Promise<void> }} options.ztna  ZTNA 판정기(규칙 추가 함수 필요)
- * @param {string}   [options.logPath='alerts.log']  알림을 쌓을 파일
+ * @param {string}   [options.logPath='xdr/alerts.log']  알림을 쌓을 파일
  * @param {number}   [options.ttlSeconds=3600]       규칙 유효 시간(초)
  * @param {string[]} [options.allowlist=[]]          막지 않을 IP 또는 IPv4 CIDR
  * @param {(ip: string) => boolean | Promise<boolean>} [options.isTrusted]  true 면 막지 않는다
@@ -198,17 +201,17 @@ export function createResponder(options = {}) {
   const activeUntil = new Map(); // 주소 → 우리가 넣은 규칙의 만료 시각(ms)
   const notified = boundedSet(); // 같은 알림을 다시 쓰지 않기 위한 기억
 
-  /** alerts.log 에 한 줄 쌓는다. 같은 (구분, 주소, 경보 번호)는 한 번만. 쓰기 실패는 오류 문구로 돌려준다. */
+  /** 알림 로그에 한 줄 쌓는다. 같은 (구분, 주소, 경보 번호)는 한 번만. 쓰기 실패는 오류 문구로 돌려준다. */
   function notify(kind, ip, alertId, fields, nowMs) {
     const dedupeKey = `${kind}|${ip}|${alertId}`;
     if (notified.has(dedupeKey)) return null;
-    notified.add(dedupeKey);
     const line = [localIso(nowMs), kind, ip || "-", `경보 ${alertId || "-"}`, ...fields].map(oneLine).join(" | ");
     try {
       appendFileSync(logPath, line + "\n", "utf8");
+      notified.add(dedupeKey);
       return null;
     } catch (error) {
-      return `alerts.log 쓰기 실패: ${error.message}`;
+      return `알림 로그 쓰기 실패: ${error.message}`;
     }
   }
 

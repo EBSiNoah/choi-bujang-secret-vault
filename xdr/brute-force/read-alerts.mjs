@@ -1,7 +1,8 @@
 /**
  * Wazuh 경보 읽기 모듈.
  *
- * 경보 JSON에서 시각 · 출발 주소 · 계정 · 규칙 수준 · 설명을 뽑아 평범한 객체로 돌려준다.
+ * 경보 JSON에서 시각 · 출발 주소 · 계정 · 규칙 수준 · 설명만 뽑아 돌려준다.
+ * 출력 문자열에 비밀처럼 보이는 값이 있으면 가린다.
  *
  * 받아들이는 입력 형태:
  *   - { "alerts": [...] } 로 감싼 파일 (fixture 형식)
@@ -12,18 +13,11 @@
  * Node 18+ 표준 라이브러리만 사용한다.
  *
  * @typedef {Object} Alert
- * @property {string|null} id
- * @property {Date|null} timestamp        시각 (Date, 절대 시각)
- * @property {string|null} timestampRaw   원본 시각 문자열 (예: 2026-09-27T09:12:01+09:00)
+ * @property {string|null} timestamp      ISO 8601 시각
  * @property {string|null} srcIp          출발 주소 (data.srcip)
- * @property {string|null} user           계정 (data.srcuser)
+ * @property {string|null} account        계정 (data.accounts, data.srcuser)
  * @property {number|null} level          규칙 수준 (rule.level)
  * @property {string|null} description    설명 (rule.description)
- * @property {string|null} agent
- * @property {string[]} mitre
- * @property {number|null} count          data.count (실패 횟수 등)
- * @property {string[]} accounts          data.accounts (쉼표로 적힌 여러 계정)
- * @property {object} raw                 원본 경보
  */
 
 import { readFile } from "node:fs/promises";
@@ -46,35 +40,29 @@ function toStr(value) {
   return text === "" ? null : text;
 }
 
+function safeText(value) {
+  const text = toStr(value);
+  if (text === null) return null;
+  return text.replace(/[\r\n\t]/g, " ")
+    .replace(
+      /\b(password|passwd|pwd|token|access[_-]?token|refresh[_-]?token|secret|client[_-]?secret|api[_-]?key|private[_-]?key|authorization)(\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi,
+      (_match, key, separator) => `${key}${separator}[REDACTED]`,
+    )
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [REDACTED]")
+    .replace(/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, "[REDACTED]")
+    .replace(/\b[A-Za-z0-9_+/=-]{24,}\b/g, "[REDACTED]");
+}
+
 function toInt(value) {
   if (value === null || value === undefined || typeof value === "boolean") return null;
   const text = String(value).trim();
   return /^[+-]?\d+$/.test(text) ? Number.parseInt(text, 10) : null;
 }
 
-/** ISO 8601 문자열을 Date 로. Wazuh 원본의 '+0900' 오프셋도 처리. */
-function toDate(value) {
-  let text = toStr(value);
-  if (text === null) return null;
-  // '+0900' -> '+09:00'
-  text = text.replace(/([+-]\d{2})(\d{2})$/, "$1:$2");
-  const date = new Date(text);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
 function splitList(value) {
   const text = toStr(value);
   if (text === null) return [];
   return text.split(",").map((s) => s.trim()).filter(Boolean);
-}
-
-/** rule.mitre 는 ["T1110"] 이거나 { id: ["T1110"], ... } 두 형태가 있다. */
-function mitreIds(rule) {
-  let mitre = get(rule, "mitre");
-  if (mitre && typeof mitre === "object" && !Array.isArray(mitre)) mitre = mitre.id;
-  if (typeof mitre === "string") return [mitre];
-  if (Array.isArray(mitre)) return mitre.map(String);
-  return [];
 }
 
 // ---------------------------------------------------------------- 핵심 함수
@@ -85,20 +73,23 @@ function mitreIds(rule) {
  * @returns {Alert}
  */
 export function parseAlert(raw) {
+  const accounts = splitList(get(raw, "data", "accounts"));
+  const user = toStr(get(raw, "data", "srcuser"));
   return {
-    id: toStr(raw?.id),
-    timestamp: toDate(raw?.timestamp),
-    timestampRaw: toStr(raw?.timestamp),
-    srcIp: toStr(get(raw, "data", "srcip")),
-    user: toStr(get(raw, "data", "srcuser")),
+    timestamp: getTimestamp(raw?.timestamp),
+    srcIp: safeText(get(raw, "data", "srcip")),
+    account: [...new Set([...accounts, ...(user === null ? [] : [user])])]
+      .map(safeText)
+      .filter(Boolean)
+      .join(", ") || null,
     level: toInt(get(raw, "rule", "level")),
-    description: toStr(get(raw, "rule", "description")),
-    agent: toStr(get(raw, "agent", "name")),
-    mitre: mitreIds(raw?.rule),
-    count: toInt(get(raw, "data", "count")),
-    accounts: splitList(get(raw, "data", "accounts")),
-    raw,
+    description: safeText(get(raw, "rule", "description")),
   };
+}
+
+function getTimestamp(value) {
+  const timestamp = safeText(value);
+  return timestamp !== null && !Number.isNaN(Date.parse(timestamp)) ? timestamp : null;
 }
 
 function* iterRaw(payload) {
@@ -152,23 +143,22 @@ export async function loadAlerts(path) {
  * @returns {Alert[]}
  */
 export function sortByTime(alerts) {
-  const t = (a) => (a.timestamp ? a.timestamp.getTime() : Number.POSITIVE_INFINITY);
+  const t = (a) => (a.timestamp ? Date.parse(a.timestamp) : Number.POSITIVE_INFINITY);
   return [...alerts].sort((a, b) => t(a) - t(b));
 }
 
 // ---------------------------------------------------------------- 실행 예
-// node wazuh-alert-reader.mjs brute-force.json
+// node xdr/brute-force/read-alerts.mjs
 
 import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  const target = process.argv[2] ?? "brute-force.json";
+if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
+  const target = process.argv[2] ?? resolve(dirname(fileURLToPath(import.meta.url)), "../fixtures/brute-force.json");
   for (const a of sortByTime(await loadAlerts(target))) {
-    // 원본 오프셋 그대로 시:분:초 표시 (예: 09:12:01)
-    const when = a.timestampRaw?.match(/T(\d{2}:\d{2}:\d{2})/)?.[1] ?? "-";
     console.log(
-      `${when}  L${String(a.level ?? "-").padEnd(2)}  ` +
-        `${(a.srcIp ?? "-").padEnd(15)} ${(a.user ?? "-").padEnd(7)} ${a.description ?? ""}`,
+      `${a.timestamp ?? "-"}\t${a.srcIp ?? "-"}\t${a.account ?? "-"}\t` +
+        `${a.level ?? "-"}\t${a.description ?? "-"}`,
     );
   }
 }
