@@ -39,15 +39,20 @@ const BLOCK_AT = 0.85;
 const ALERT_AT = 0.5;
 
 function getRequestArguments(value) {
-  if (typeof value !== "string") return "";
+  if (typeof value !== "string") return [];
   const queryStart = value.indexOf("?");
-  if (queryStart < 0) return "";
+  if (queryStart < 0) return [];
   const query = value.slice(queryStart + 1).split("#", 1)[0];
-  try {
-    return decodeURIComponent(query.replace(/\+/g, " ")).toLowerCase();
-  } catch {
-    return query.toLowerCase();
-  }
+  return query.split("&").map((parameter) => {
+    const separator = parameter.indexOf("=");
+    if (separator < 0) return "";
+    const argument = parameter.slice(separator + 1).replace(/\+/g, " ");
+    try {
+      return decodeURIComponent(argument).toLowerCase();
+    } catch {
+      return argument.toLowerCase();
+    }
+  });
 }
 
 function getOccurrenceCount(value) {
@@ -74,7 +79,7 @@ export function decide(alert) {
 
   let best = null;
   for (const pattern of PATTERNS) {
-    const matchesRequest = pattern.urlPattern.test(requestArguments);
+    const matchesRequest = requestArguments.some((argument) => pattern.urlPattern.test(argument));
     const matchesDescription = pattern.descriptionPattern.test(description);
     if (!matchesRequest && !matchesDescription) continue;
 
@@ -87,10 +92,7 @@ export function decide(alert) {
   }
 
   if (best !== null) {
-    const occurrenceNote = count < best.pattern.minimumOccurrences
-      ? "단발 신호로 반복 기준 미달, 추가 확인 필요"
-      : `${count}회 반복 신호`;
-    return result(best.confidence, `${best.pattern.name} — ${occurrenceNote}`);
+    return result(best.confidence, best.pattern.name);
   }
 
   if (/이상한 검색|주입처럼 보이는/i.test(description)) {
