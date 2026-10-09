@@ -1,0 +1,76 @@
+{
+  "schema": "aleph.xdr.patterns.v2",
+  "moduleKey": "web-injection",
+  "basis": {
+    "framework": "MITRE ATT&CK",
+    "technique": "T1190",
+    "name": "Exploit Public-Facing Application (외부 공개 앱 악용)",
+    "url": "https://attack.mitre.org/techniques/T1190/"
+  },
+  "inputs": {
+    "requestArguments": {
+      "path": "data.url",
+      "use": "요청 인자에서 신호를 찾고 data.count로 같은 신호의 반복 정도를 확인한다"
+    }
+  },
+  "notes": [
+    "반복은 같은 신호가 2회 이상 관찰된 경우를 뜻한다. 이 값은 반복 여부를 표현하기 위한 조건이며 MITRE ATT&CK이 정한 임계값이 아니다.",
+    "일반 단어의 단발 등장만으로는 패턴과 일치시키지 않는다."
+  ],
+  "patterns": [
+    {
+      "id": "repeated-sql-syntax",
+      "name": "요청 인자의 반복된 SQL 구문",
+      "mitre": ["T1190"],
+      "conditions": [
+        {
+          "field": "data.url",
+          "location": "query-argument-values",
+          "signal": "SQL 구문 연결 또는 데이터베이스 조회 구문",
+          "minimumOccurrences": 2,
+          "occurrenceCount": "data.count"
+        }
+      ],
+      "evidence": {
+        "rationale": "MITRE ATT&CK T1190은 외부 공개 앱 악용 기법이며, 요청 인자의 반복된 SQL 구문은 앱 입력 처리 악용 시도와 일치하는 신호다.",
+        "reference": "https://attack.mitre.org/techniques/T1190/"
+      }
+    },
+    {
+      "id": "repeated-script-tag",
+      "name": "요청 인자의 반복된 스크립트 태그 표식",
+      "mitre": ["T1190"],
+      "conditions": [
+        {
+          "field": "data.url",
+          "location": "query-argument-values",
+          "signal": "스크립트 태그 삽입 표식",
+          "minimumOccurrences": 2,
+          "occurrenceCount": "data.count"
+        }
+      ],
+      "evidence": {
+        "rationale": "MITRE ATT&CK T1190은 외부 공개 앱 악용 기법이며, 요청 인자에 반복되는 스크립트 태그 표식은 앱 입력 처리 악용 시도와 일치하는 신호다.",
+        "reference": "https://attack.mitre.org/techniques/T1190/"
+      }
+    },
+    {
+      "id": "repeated-path-traversal",
+      "name": "요청 인자의 반복된 상위 경로 이동",
+      "mitre": ["T1190"],
+      "conditions": [
+        {
+          "field": "data.url",
+          "location": "query-argument-values",
+          "signal": "../ 경로 거슬러 올라가기 표기",
+          "minimumOccurrences": 2,
+          "occurrenceCount": "data.count"
+        }
+      ],
+      "evidence": {
+        "rationale": "MITRE ATT&CK T1190은 외부 공개 앱 악용 기법이며, 요청 인자의 반복된 ../ 표기는 앱을 통한 경로 접근 악용 시도와 일치하는 신호다.",
+        "reference": "https://attack.mitre.org/techniques/T1190/"
+      }
+    }
+  ]
+}
