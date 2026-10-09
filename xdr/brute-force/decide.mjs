@@ -15,9 +15,9 @@
  *     (프로세스가 끝나면 사라지는 메모리일 뿐, 어디에도 기록하지 않는다.)
  *   - 같은 경보를 다시 넣어도 두 번 세지 않는다(id, 없으면 시각·계정·건수로 구분).
  *
- * 확신도: 조건마다 0~1 점수를 매기고, 모든 조건이 맞아야 하므로 가장 낮은 점수를 쓴다.
- *   - 기준선에 정확히 걸치면 0.7(애매). 기준을 넉넉히 넘어설수록 1 에 가까워진다.
- *   - 기준에 못 미치면 못 미친 비율만큼 0.7 에서 깎인다.
+ * 확신도: 패턴 조건별 점수 중 가장 낮은 값을 해당 패턴의 확신도로 쓴다.
+ *   - 기준을 만족하면 0.9 이상이며, 기준을 넉넉히 넘어설수록 1 에 가까워진다.
+ *   - 기준에 못 미치는 경우에도 근접도에 따라 애매한 시도와 정상 이벤트를 구분한다.
  *   - 0.85 이상 block, 0.5 이상 alert, 그 아래 record.
  */
 
@@ -88,8 +88,8 @@ const BLOCK_AT = 0.85; // 이상이면 block
 const ALERT_AT = 0.5; // 이상이면 alert, 그 아래는 record
 
 /** 점수 계산 보조 값 */
-const BORDERLINE = 0.7; // 기준선에 정확히 걸칠 때의 점수
-const MATCH_FLOOR = 0.25; // 이보다 낮으면 reason 에서 패턴과 일치한다고 말하지 않는다
+const BORDERLINE = 0.9; // 패턴 조건 기준에 도달했을 때의 점수
+const MATCH_FLOOR = ALERT_AT; // 이보다 낮으면 reason 에서 패턴과 일치한다고 말하지 않는다
 
 /** 기억(메모리) 상한 */
 const MAX_EVENTS_PER_IP = 5000;
@@ -179,14 +179,20 @@ function computeMetrics(events) {
 
 /**
  * 조건 하나의 점수(0~1).
- *   '>=' : 기준 이상이면 0.7 에서 시작해 기준의 2배에서 1. 못 미치면 비율만큼 0.7 에서 깎는다.
- *   '<=' : 기준 이하이면 0.7 에서 시작해 계정당 1회에서 1. 넘으면 기준/값 비율만큼 깎는다.
+ *   '>=' : 기준 이상이면 0.9 에서 시작한다. 미달이어도 근접도에 따라 경보/차단 후보 점수를 준다.
+ *   '<=' : 기준 이하이면 0.9 에서 시작하고, 초과하면 초과 비율만큼 점수가 낮아진다.
  */
 function conditionScore(value, op, limit) {
   if (value === null || !Number.isFinite(value)) return 0;
   if (op === ">=") {
     if (value >= limit) return BORDERLINE + (1 - BORDERLINE) * Math.min((value - limit) / limit, 1);
-    return BORDERLINE * (Math.max(value, 0) / limit);
+    const alertFloor = Math.max(2, limit * 0.15);
+    const blockFloor = limit * 0.75;
+    if (value < alertFloor) return 0.5 * (Math.max(value, 0) / alertFloor);
+    if (value < blockFloor) {
+      return 0.5 + (BLOCK_AT - 0.5) * ((value - alertFloor) / (blockFloor - alertFloor));
+    }
+    return BLOCK_AT + (BORDERLINE - BLOCK_AT) * ((value - blockFloor) / (limit - blockFloor));
   }
   if (op === "<=") {
     if (value > limit) return BORDERLINE * (limit / value);
