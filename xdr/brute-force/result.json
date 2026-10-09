@@ -17,7 +17,7 @@
     {
       "alertId": "bf-03",
       "action": "block",
-      "confidence": 0.94,
+      "confidence": 0.98,
       "reason": "같은 주소의 짧은 시간 로그인 실패 연속"
     },
     {
@@ -28,8 +28,8 @@
     },
     {
       "alertId": "bf-05",
-      "action": "alert",
-      "confidence": 0.7,
+      "action": "block",
+      "confidence": 0.9,
       "reason": "같은 주소의 짧은 시간 로그인 실패 연속"
     },
     {
@@ -52,8 +52,8 @@
     },
     {
       "alertId": "bf-09",
-      "action": "alert",
-      "confidence": 0.52,
+      "action": "block",
+      "confidence": 0.85,
       "reason": "같은 주소의 짧은 시간 로그인 실패 연속"
     },
     {
@@ -64,116 +64,116 @@
     },
     {
       "alertId": "bf-11",
-      "action": "record",
-      "confidence": 0.14,
-      "reason": "일치하는 패턴 없음"
+      "action": "alert",
+      "confidence": 0.53,
+      "reason": "같은 주소의 짧은 시간 로그인 실패 연속"
     },
     {
       "alertId": "bf-12",
-      "action": "record",
-      "confidence": 0.21,
-      "reason": "일치하는 패턴 없음"
+      "action": "alert",
+      "confidence": 0.59,
+      "reason": "같은 주소의 짧은 시간 로그인 실패 연속"
     },
     {
       "alertId": "bf-13",
-      "action": "record",
-      "confidence": 0.14,
-      "reason": "일치하는 패턴 없음"
+      "action": "alert",
+      "confidence": 0.5,
+      "reason": "같은 주소의 짧은 시간 로그인 실패 연속"
     },
     {
       "alertId": "bf-14",
-      "action": "record",
-      "confidence": 0.18,
-      "reason": "일치하는 패턴 없음"
+      "action": "alert",
+      "confidence": 0.56,
+      "reason": "같은 주소의 짧은 시간 로그인 실패 연속"
     },
     {
       "alertId": "bf-15",
-      "action": "record",
-      "confidence": 0.14,
-      "reason": "일치하는 패턴 없음"
+      "action": "alert",
+      "confidence": 0.53,
+      "reason": "같은 주소의 짧은 시간 로그인 실패 연속"
     },
     {
       "alertId": "bf-16",
-      "action": "record",
-      "confidence": 0.14,
-      "reason": "일치하는 패턴 없음"
+      "action": "alert",
+      "confidence": 0.5,
+      "reason": "같은 주소의 짧은 시간 로그인 실패 연속"
     },
     {
       "alertId": "bf-17",
-      "action": "record",
-      "confidence": 0.14,
-      "reason": "일치하는 패턴 없음"
+      "action": "alert",
+      "confidence": 0.53,
+      "reason": "같은 주소의 짧은 시간 로그인 실패 연속"
     },
     {
       "alertId": "bf-18",
-      "action": "record",
-      "confidence": 0.28,
+      "action": "alert",
+      "confidence": 0.65,
       "reason": "같은 주소의 짧은 시간 로그인 실패 연속"
     },
     {
       "alertId": "bf-19",
-      "action": "record",
-      "confidence": 0.14,
-      "reason": "일치하는 패턴 없음"
+      "action": "alert",
+      "confidence": 0.5,
+      "reason": "같은 주소의 짧은 시간 로그인 실패 연속"
     },
     {
       "alertId": "bf-20",
       "action": "record",
-      "confidence": 0.14,
+      "confidence": 0.25,
       "reason": "일치하는 패턴 없음"
     },
     {
       "alertId": "bf-21",
       "action": "record",
-      "confidence": 0.14,
+      "confidence": 0.25,
       "reason": "일치하는 패턴 없음"
     },
     {
       "alertId": "bf-22",
       "action": "record",
-      "confidence": 0.14,
+      "confidence": 0.25,
       "reason": "일치하는 패턴 없음"
     },
     {
       "alertId": "bf-23",
       "action": "record",
-      "confidence": 0.14,
+      "confidence": 0.25,
       "reason": "일치하는 패턴 없음"
     },
     {
       "alertId": "bf-24",
       "action": "record",
-      "confidence": 0.14,
+      "confidence": 0.25,
       "reason": "일치하는 패턴 없음"
     },
     {
       "alertId": "bf-25",
       "action": "record",
-      "confidence": 0.14,
+      "confidence": 0.25,
       "reason": "일치하는 패턴 없음"
     },
     {
       "alertId": "bf-26",
       "action": "record",
-      "confidence": 0.14,
+      "confidence": 0.25,
       "reason": "일치하는 패턴 없음"
     },
     {
       "alertId": "bf-27",
       "action": "record",
-      "confidence": 0.14,
+      "confidence": 0.25,
       "reason": "일치하는 패턴 없음"
     },
     {
       "alertId": "bf-28",
       "action": "record",
-      "confidence": 0.14,
+      "confidence": 0.25,
       "reason": "일치하는 패턴 없음"
     }
   ],
   "counts": {
-    "block": 8,
-    "alert": 2,
-    "record": 18
+    "block": 10,
+    "alert": 9,
+    "record": 9
   }
 }
