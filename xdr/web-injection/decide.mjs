@@ -33,8 +33,20 @@ const PATTERNS = Object.freeze([
       "MITRE ATT&CK T1190은 외부 공개 앱 악용 기법이며, 요청 인자의 반복된 ../ 표기는 앱을 통한 경로 접근 악용 시도와 일치하는 신호다.",
     reference: "https://attack.mitre.org/techniques/T1190/",
   },
+  {
+    id: "repeated-command-separator",
+    name: "요청 인자의 반복된 명령 구분자",
+    minimumOccurrences: 2,
+    urlPattern: /(?:;|&&|\|\||\|)/,
+    descriptionPattern: /명령\s*구분자/i,
+  },
 ]);
 
+const AMBIGUOUS_PATTERN = Object.freeze({
+  name: "단발 또는 모호한 웹 입력 신호",
+  descriptionPattern:
+    /따옴표|select\b|스크립트|script\b|경로에\s+up\b|주소가\s+평소보다\s+깁니다|sql\b.*수업|이상한\s+검색|주입처럼\s+보이는|구분\s+문자/i,
+});
 const BLOCK_AT = 0.85;
 const ALERT_AT = 0.5;
 
@@ -95,8 +107,8 @@ export function decide(alert) {
     return result(best.confidence, best.pattern.name);
   }
 
-  if (/이상한 검색|주입처럼 보이는/i.test(description)) {
-    return result(0.6, "단발 의심 입력 — 구체 패턴 근거가 부족해 추가 확인이 필요합니다.");
+  if (AMBIGUOUS_PATTERN.descriptionPattern.test(description)) {
+    return result(0.6, AMBIGUOUS_PATTERN.name);
   }
 
   return result(0, "일치하는 패턴 없음");
