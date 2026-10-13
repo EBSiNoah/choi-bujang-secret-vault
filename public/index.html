@@ -62,7 +62,6 @@
         <span id="who"></span>
         <button class="ghost" id="logout-btn" type="button">로그아웃</button>
       </div>
-      <ul id="notes" aria-live="polite"></ul>
 
       <h2>내 메모</h2>
       <form id="memo-form" novalidate>
@@ -95,7 +94,6 @@
     function showLogin() {
       $('view-login').hidden = false;
       $('view-vault').hidden = true;
-      $('notes').replaceChildren();
       $('memos').replaceChildren();
       resetMemoForm();
     }
@@ -111,11 +109,9 @@
     // 화면 코드에는 어떤 키도 들어 있지 않습니다. userId·role 도 보내지 않습니다.
     async function api(path, options = {}) {
       const token = sessionStorage.getItem(TOKEN_KEY);
-      const resourceId = path === '/api/notes'
-        ? 'teacher-announcements'
-        : path === '/api/memos' || path.startsWith('/api/memos/')
-          ? 'personal-memos'
-          : null;
+      const resourceId = path === '/api/memos' || path.startsWith('/api/memos/')
+        ? 'personal-memos'
+        : null;
       const response = await fetch(path, {
         cache: 'no-store',
         ...options,
@@ -133,31 +129,7 @@
       $('view-login').hidden = true;
       $('view-vault').hidden = false;
       $('who').textContent = sessionStorage.getItem(EMAIL_KEY) || '';
-      await loadNotes();
       if (sessionStorage.getItem(TOKEN_KEY)) await loadMemos();
-    }
-
-    async function loadNotes() {
-      const list = $('notes');
-      list.replaceChildren(msgItem('자료를 불러오는 중입니다.'));
-      try {
-        const response = await api('/api/notes');
-        if (response.status === 401) return;
-        if (!response.ok) throw new Error('자료를 불러오지 못했습니다.');
-        const data = await response.json();
-        if (!Array.isArray(data.notes)) throw new Error('자료 형식이 맞지 않습니다.');
-        list.replaceChildren(...data.notes.map((note) => {
-          const item = document.createElement('li');
-          const title = document.createElement('strong');
-          const content = document.createElement('span');
-          title.textContent = note.title;
-          content.textContent = note.content;
-          item.append(title, content);
-          return item;
-        }));
-      } catch (error) {
-        list.replaceChildren(msgItem(error.message));
-      }
     }
 
     // ── 로그인 / 로그아웃 ──
