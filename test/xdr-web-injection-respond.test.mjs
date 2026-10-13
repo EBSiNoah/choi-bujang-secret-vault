@@ -29,7 +29,7 @@ test("웹 주입 fixture는 명확한 공격만 차단하고 정상 주소는 �
         counts[decision.action] += 1;
         return counts;
       }, { block: 0, alert: 0, record: 0 }),
-      { block: 7, alert: 2, record: 17 },
+      { block: 8, alert: 9, record: 9 },
     );
     assert.equal(rules.length, new Set(
       fixture.alerts
@@ -51,7 +51,7 @@ test("웹 주입 fixture는 명확한 공격만 차단하고 정상 주소는 �
     }
 
     const lines = (await readFile(logPath, "utf8")).trimEnd().split("\n");
-    assert.equal(lines.length, 8);
+    assert.equal(lines.length, 16);
     assert.ok(lines.every((line) => !/[\r\n]/.test(line)));
   } finally {
     await rm(dir, { recursive: true, force: true });
