@@ -37,10 +37,18 @@ export async function checkDecider({ decide, ruleIds }) {
     { name: '서비스와 경로가 다른 요청', request: { ...normal,
       requestId: randomUUID(), path: normal.path.replace('/notes/', '/memos/') },
     decision: 'deny', reasonCode: 'unknown_path' },
+    { name: '자기 메모 목록 정상 읽기', request: { ...normal,
+      requestId: randomUUID(), service: 'memos', method: 'GET',
+      path: '/memos', route: 'GET /memos' },
+    decision: 'allow' },
     { name: '정상 메모 수정 경로', request: { ...normal,
       requestId: randomUUID(), service: 'memos', method: 'PUT',
       path: normal.path.replace('/notes/', '/memos/'), route: 'PUT /memos/:id' },
     decision: 'allow' },
+    { name: '등록되지 않은 구역', request: { ...normal,
+      requestId: randomUUID(), service: 'archive', path: '/archive',
+      route: 'GET /archive' },
+    decision: 'deny', reasonCode: 'unknown_path' },
   ];
   if (ruleIds.includes('step_up_required')) {
     checks.push(

@@ -55,6 +55,11 @@ function hasValidStepUp(stepUp) {
 }
 
 function hasKnownResourcePath(request) {
+  if (request.service === 'memos' && request.method === 'GET'
+      && request.path === '/memos' && request.route === 'GET /memos') {
+    return true;
+  }
+
   const methods = RESOURCE_METHODS[request.service];
   const resourceId = request.path.startsWith(`/${request.service}/`)
     ? request.path.slice(request.service.length + 2)
