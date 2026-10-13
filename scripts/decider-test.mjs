@@ -28,6 +28,19 @@ export async function checkDecider({ decide, ruleIds }) {
     { name: '등록 기기의 정상 요청', request: normal, decision: 'allow' },
     { name: '미등록 기기의 가상 요청', request: { ...normal, requestId: randomUUID(),
       deviceRegistered: false }, decision: 'deny', reasonCode: 'device_not_registered' },
+    { name: '자료 ID 자리에 온 기능 경로', request: { ...normal,
+      requestId: randomUUID(), path: '/notes/export' }, decision: 'deny',
+    reasonCode: 'unknown_path' },
+    { name: '자료 아래 중첩된 기능 경로', request: { ...normal,
+      requestId: randomUUID(), path: `${normal.path}/export`,
+      route: 'GET /notes/:id/export' }, decision: 'deny', reasonCode: 'unknown_path' },
+    { name: '서비스와 경로가 다른 요청', request: { ...normal,
+      requestId: randomUUID(), path: normal.path.replace('/notes/', '/memos/') },
+    decision: 'deny', reasonCode: 'unknown_path' },
+    { name: '정상 메모 수정 경로', request: { ...normal,
+      requestId: randomUUID(), service: 'memos', method: 'PUT',
+      path: normal.path.replace('/notes/', '/memos/'), route: 'PUT /memos/:id' },
+    decision: 'allow' },
   ];
   if (ruleIds.includes('step_up_required')) {
     checks.push(

@@ -1,7 +1,14 @@
 // ALEPH SDP 엔진이 확인한 요청만 받는 학생 판정기 시작점입니다.
 // 6단계 규칙: 등록 기기를 확인하고 복합 이상 접속은 추가 확인합니다.
 // 요청 본문의 userId, role, 기기 키, 토큰을 별도로 믿거나 저장하지 마세요.
-export const RULE_IDS = Object.freeze(['device_registered', 'step_up_required']);
+export const RULE_IDS = Object.freeze([
+  'device_registered', 'step_up_required', 'known_resource_path',
+]);
+
+const RESOURCE_METHODS = Object.freeze({
+  notes: Object.freeze(['GET']),
+  memos: Object.freeze(['GET', 'PUT']),
+});
 
 const REQUEST_FIELDS = Object.freeze([
   'schema', 'requestId', 'classId', 'projectId', 'subjectId', 'deviceId',
@@ -47,6 +54,17 @@ function hasValidStepUp(stepUp) {
     && stepUp.authAgeSeconds >= 0 && stepUp.authAgeSeconds <= 900;
 }
 
+function hasKnownResourcePath(request) {
+  const methods = RESOURCE_METHODS[request.service];
+  const resourceId = request.path.startsWith(`/${request.service}/`)
+    ? request.path.slice(request.service.length + 2)
+    : '';
+  return Array.isArray(methods)
+    && methods.includes(request.method)
+    && request.route === `${request.method} /${request.service}/:id`
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(resourceId);
+}
+
 function hasValidRequest(request) {
   if (!hasExactFields(request, REQUEST_FIELDS) || request.schema !== 'aleph.decision.v1') return false;
   const textFields = [
@@ -69,6 +87,16 @@ function hasValidRequest(request) {
 
 export async function decide(request) {
   if (!hasValidRequest(request)) throw new TypeError('Invalid engine decision request');
+  if (!hasKnownResourcePath(request)) {
+    return {
+      schema: 'aleph.decision.v1',
+      requestId: request.requestId,
+      decision: 'deny',
+      reasonCode: 'unknown_path',
+      ruleIds: ['known_resource_path'],
+    };
+  }
+
   const registered = request.deviceRegistered === true;
   const unusualAccess = request.signals.source === 'judge_fixture'
     && request.signals.network === 'unusual'
