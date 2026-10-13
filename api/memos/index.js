@@ -1,16 +1,21 @@
 import { memosContext, parseMemo, isUuid, newId } from '../../src/memos.mjs';
 
 export default async function handler(request, response) {
-  const ctx = await memosContext(request, response, ['GET', 'POST']);
+  const ctx = await memosContext(request, response, ['GET', 'POST'], 'personal-memos');
   if (!ctx) return;
 
   try {
     if (request.method === 'GET') {
       // 목록: 로그인한 사용자 본인의 메모만 돌려줍니다.
       const upstream = await ctx.rest(
-        `memos?select=id,title,body&owner_id=eq.${encodeURIComponent(ctx.userId)}&order=created_at.asc`);
+        `memos?select=id,owner_id,title,body&owner_id=eq.${encodeURIComponent(ctx.userId)}&order=created_at.asc`);
       if (!upstream.ok) return response.status(502).json({ error: 'MEMOS_SERVICE_UNAVAILABLE' });
-      return response.status(200).json(await upstream.json());
+      const rows = await upstream.json();
+      if (!Array.isArray(rows)) return response.status(502).json({ error: 'MEMOS_SERVICE_UNAVAILABLE' });
+      if (rows.some(row => row?.owner_id !== ctx.userId)) {
+        return response.status(403).json({ error: 'MEMO_OWNER_MISMATCH' });
+      }
+      return response.status(200).json(rows.map(({ id, title, body }) => ({ id, title, body })));
     }
 
     // POST: { id?, title, body } -> 201 { id }

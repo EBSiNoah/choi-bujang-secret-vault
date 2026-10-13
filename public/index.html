@@ -111,11 +111,17 @@
     // 화면 코드에는 어떤 키도 들어 있지 않습니다. userId·role 도 보내지 않습니다.
     async function api(path, options = {}) {
       const token = sessionStorage.getItem(TOKEN_KEY);
+      const resourceId = path === '/api/notes'
+        ? 'teacher-announcements'
+        : path === '/api/memos' || path.startsWith('/api/memos/')
+          ? 'personal-memos'
+          : null;
       const response = await fetch(path, {
         cache: 'no-store',
         ...options,
         headers: {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(resourceId ? { 'X-Vault-Resource-ID': resourceId } : {}),
           ...(options.body ? { 'Content-Type': 'application/json' } : {}),
         },
       });

@@ -24,12 +24,16 @@ export function parseMemo(body) {
 
 // 메서드·설정·로그인을 확인합니다. 통과하면 { userId, rest } 를 돌려주고,
 // 거부할 때는 응답을 이미 보낸 뒤 null 을 돌려줍니다.
-export async function memosContext(request, response, methods) {
+export async function memosContext(request, response, methods, resourceId) {
   response.setHeader('Cache-Control', 'no-store');
 
   if (!methods.includes(request.method)) {
     response.setHeader('Allow', methods.join(', '));
     response.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
+    return null;
+  }
+  if (request.headers['x-vault-resource-id'] !== resourceId) {
+    response.status(400).json({ error: 'INVALID_RESOURCE_ID' });
     return null;
   }
 
@@ -50,6 +54,10 @@ export async function memosContext(request, response, methods) {
   const identity = await verify(request.headers.authorization);
   if (!identity) {
     response.status(401).json({ error: 'LOGIN_REQUIRED' });
+    return null;
+  }
+  if (identity.kind !== 'student') {
+    response.status(403).json({ error: 'STUDENT_ACCESS_REQUIRED' });
     return null;
   }
 

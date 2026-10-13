@@ -8,7 +8,7 @@ import { memosContext, parseMemo, isUuid } from '../../src/memos.mjs';
 const OWNER_FIELDS = ['owner_id', 'ownerId', 'user_id', 'userId'];
 
 export default async function handler(request, response) {
-  const ctx = await memosContext(request, response, ['GET', 'PUT', 'DELETE']);
+  const ctx = await memosContext(request, response, ['GET', 'PUT', 'DELETE'], 'personal-memos');
   if (!ctx) return;
 
   const id = request.query?.id;
