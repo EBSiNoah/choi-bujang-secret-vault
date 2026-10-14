@@ -80,7 +80,7 @@ test('allows the suspicious fixture after a verified step-up', async () => {
   assert.equal((await decide(verified)).decision, 'allow');
 });
 
-test('allows a memo selected by exactly one resource ID without restricting its format', async () => {
+test('allows one memo ID without restricting its format and keeps the memo methods', async () => {
   const { normal } = fixtureRequests();
   const request = { ...normal, path: '/api/memos/not-a-uuid' };
 
@@ -94,18 +94,31 @@ test('allows a memo selected by exactly one resource ID without restricting its 
   }
 });
 
-test('allows the existing notes service to read one memo by its exact API route', async () => {
+test('allows a class announcement only through the notes service and exact single-ID route', async () => {
   const { normal } = fixtureRequests();
-  const response = await decide({
+  const announcement = {
     ...normal,
     service: 'notes',
-    path: '/api/memos/own-memo-id',
-  });
+    method: 'GET',
+    path: '/api/notes/announcement-id',
+    route: 'GET /api/notes/:id',
+  };
 
-  assert.equal(response.decision, 'allow');
+  assert.equal((await decide(announcement)).decision, 'allow');
+  for (const wrongRoute of [
+    { service: 'memos', path: '/api/notes/announcement-id', route: 'GET /api/notes/:id' },
+    { service: 'notes', path: '/api/memos/own-memo-id', route: 'GET /api/memos/:id' },
+    { service: 'notes', path: '/api/notes', route: 'GET /api/notes' },
+    { service: 'notes', path: '/api/notes/announcement-id/export', route: 'GET /api/notes/:id/export' },
+    { service: 'notes', path: '/api/notes/announcement-id', route: 'GET /api/notes/export' },
+  ]) {
+    const response = await decide({ ...announcement, ...wrongRoute });
+    assert.equal(response.decision, 'deny');
+    assert.equal(response.reasonCode, 'resource_route_not_allowed');
+  }
 });
 
-test('denies collection, nested feature, mismatched route, and query-selected memo requests', async () => {
+test('denies memo collections, nested feature routes, wrong route shapes, and query-selected resources', async () => {
   const { normal } = fixtureRequests();
   const invalidRoutes = [
     { path: '/api/memos', route: 'GET /api/memos' },
@@ -113,6 +126,8 @@ test('denies collection, nested feature, mismatched route, and query-selected me
     { path: '/api/memos/demo', route: 'GET /api/memos/export' },
     { path: '/api/memos/export', route: 'GET /api/memos/export' },
     { path: '/api/memos/demo', queryLength: 1 },
+    { method: 'POST', path: '/api/memos/demo', route: 'POST /api/memos/:id' },
+    { method: 'PATCH', path: '/api/memos/demo', route: 'PATCH /api/memos/:id' },
   ];
 
   for (const change of invalidRoutes) {

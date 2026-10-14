@@ -15,7 +15,6 @@ const SIGNAL_FIELDS = Object.freeze(['source', 'region', 'network', 'hour']);
 const EVENT_FIELDS = Object.freeze(['kind', 'ageSeconds', 'count']);
 const STEP_UP_FIELDS = Object.freeze(['verified', 'authAgeSeconds']);
 const MEMO_METHODS = new Set(['GET', 'PUT', 'DELETE']);
-const MEMO_SERVICES = new Set(['memos', 'notes']);
 const MEMO_PATH = /^\/api\/memos\/[^/?#]+$/u;
 const ANNOUNCEMENT_PATH = /^\/api\/notes\/[^/?#]+$/u;
 
@@ -76,23 +75,23 @@ function hasValidRequest(request) {
 }
 
 function isAllowedResourceRoute(request) {
-  // This authorizes resource route shapes only; memo ownership remains an API check.
-  if (MEMO_SERVICES.has(request.service)
-      && MEMO_PATH.test(request.path)
+  // 경로 모양과 서비스가 모두 맞아야 합니다. 메모 소유자는 제작 3의 API에서 확인합니다.
+  if (request.service === 'memos') {
+    return MEMO_PATH.test(request.path)
       && MEMO_METHODS.has(request.method)
       && request.route === `${request.method} /api/memos/:id`
-      && request.queryLength === 0) {
-    return true;
+      && request.queryLength === 0;
   }
-  if (request.service === 'memos') {
-    return false;
-  }
+
+  // 반 공지는 읽기만 허용합니다. 쓰기 권한은 역할을 받지 않는 판정기에서 부여하지 않습니다.
   if (request.service === 'notes') {
     return ANNOUNCEMENT_PATH.test(request.path)
       && request.method === 'GET'
       && request.route === 'GET /api/notes/:id'
       && request.queryLength === 0;
   }
+
+  // 강사 자료와 정의하지 않은 서비스는 모두 거부합니다.
   return false;
 }
 
