@@ -94,11 +94,37 @@ export async function checkDecider({ decide, ruleIds }) {
     }), decision: 'deny', reasonCode: 'unknown_path' },
   ];
   if (ruleIds.includes('step_up_required')) {
+    const massRead = [{ kind: 'burst_read', ageSeconds: 60, count: 121 }];
+    const nighttime = { source: 'judge_fixture', region: 'foreign', network: 'unusual', hour: 3 };
     checks.push(
       { name: 'fixture의 복합 이상 접속', request: suspicious, decision: 'step_up',
         reasonCode: 'step_up_required' },
       { name: 'fixture에서 다시 확인한 복합 이상 접속', request: suspiciousRechecked,
         decision: 'allow' },
+      { name: 'fixture의 야간·이상 네트워크 없이 다량 읽기', request: fixtureRequest({
+        recentEvents: massRead,
+      }), decision: 'allow' },
+      { name: 'fixture의 주간·다량 읽기·이상 네트워크', request: fixtureRequest({
+        signals: { ...nighttime, hour: 14 },
+        recentEvents: massRead,
+      }), decision: 'allow' },
+      { name: 'fixture의 야간·정상 네트워크·다량 읽기', request: fixtureRequest({
+        signals: { ...nighttime, network: 'usual' },
+        recentEvents: massRead,
+      }), decision: 'allow' },
+      { name: 'fixture의 복합 이상이나 기준에 못 미치는 읽기', request: fixtureRequest({
+        signals: nighttime,
+        recentEvents: [{ kind: 'burst_read', ageSeconds: 60, count: 120 }],
+      }), decision: 'allow' },
+      { name: 'fixture의 복합 이상이나 다른 종류의 사건', request: fixtureRequest({
+        signals: nighttime,
+        recentEvents: [{ kind: 'risk_signal', ageSeconds: 60, count: 121 }],
+      }), decision: 'allow' },
+      { name: 'fixture에서 미등록 기기의 복합 이상 접속', request: fixtureRequest({
+        deviceRegistered: false,
+        signals: nighttime,
+        recentEvents: massRead,
+      }), decision: 'deny', reasonCode: 'device_not_registered' },
     );
   }
   const results = [];

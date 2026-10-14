@@ -36,7 +36,7 @@ export function fixtureRequests() {
     normal: fixtureRequest(),
     suspicious: fixtureRequest({
       signals: { source: 'judge_fixture', region: 'foreign', network: 'unusual', hour: 3 },
-      recentEvents: [{ kind: 'risk_signal', ageSeconds: 60, count: 20 }],
+      recentEvents: [{ kind: 'burst_read', ageSeconds: 60, count: 121 }],
     }),
   };
 }

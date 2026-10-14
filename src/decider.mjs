@@ -188,7 +188,7 @@ export async function decide(request) {
   const unusualAccess = request.signals.source === 'judge_fixture'
     && request.signals.network === 'unusual'
     && (request.signals.hour < 6 || request.signals.hour >= 22)
-    && request.recentEvents.some(event => event.kind === 'risk_signal' && event.count >= 10);
+    && request.recentEvents.some(event => event.kind === 'burst_read' && event.count > 120);
   const needsStepUp = unusualAccess && !request.stepUp.verified;
 
   return {
