@@ -1,5 +1,4 @@
 import { memosContext, parseMemo, isUuid } from '../../src/memos.mjs';
-import { RESOURCE_IDS } from '../../src/resource-id.mjs';
 
 // 4단계: 한 건 읽기·수정·삭제는 "검증된 사용자 ID == DB 행의 owner_id" 일 때만 허용합니다.
 // 1) 질의 조건에 owner_id 를 넣어, 본인 행만 일치하게 합니다 (기존 행의 소유자 확인).
@@ -9,12 +8,7 @@ import { RESOURCE_IDS } from '../../src/resource-id.mjs';
 const OWNER_FIELDS = ['owner_id', 'ownerId', 'user_id', 'userId'];
 
 export default async function handler(request, response) {
-  const ctx = await memosContext(
-    request,
-    response,
-    ['GET', 'PUT', 'DELETE'],
-    RESOURCE_IDS.personalMemos,
-  );
+  const ctx = await memosContext(request, response, ['GET', 'PUT', 'DELETE']);
   if (!ctx) return;
 
   const id = request.query?.id;

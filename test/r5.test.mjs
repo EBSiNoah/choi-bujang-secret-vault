@@ -66,7 +66,7 @@ test('attack check reads the public notes API without credentials', async () => 
       'https://student-defense.vercel.app/api/notes'
     );
     assert.equal(options.redirect, 'error');
-    assert.equal(options.headers['X-Resource-ID'], 'instructor-announcements-v1');
+    assert.equal('headers' in options, false);
     assert.match(result.observed, /메모 1건을 반환/u);
 
     globalThis.fetch = async () =>

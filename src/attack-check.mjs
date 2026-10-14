@@ -26,7 +26,6 @@ export async function runAttackChecks(config) {
 
   const response = await fetch(new URL('/api/notes', app), {
     redirect: 'error',
-    headers: { 'X-Resource-ID': 'instructor-announcements-v1' },
     signal: AbortSignal.timeout(10000),
   });
 
