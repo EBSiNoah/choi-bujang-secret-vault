@@ -30,6 +30,12 @@ test('build identity uses Vercel Git and deployment metadata', () => {
   assert.throws(() => deploymentIdentity({ ...env, VERCEL_GIT_COMMIT_SHA: 'short' }, config));
 });
 
+test('build identity preserves a later supported stage', () => {
+  const stageSixConfig = { ...config, step: 6 };
+
+  assert.equal(deploymentIdentity(env, stageSixConfig).step, 6);
+});
+
 test('attack check reads the public notes API without credentials', async () => {
   const originalFetch = globalThis.fetch;
   let requestUrl;
@@ -68,6 +74,25 @@ test('attack check reads the public notes API without credentials', async () => 
 
     const [failed] = await runAttackChecks(config);
     assert.match(failed.observed, /메모를 확인하지 못함/u);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('attack check accepts a later supported stage', async () => {
+  const originalFetch = globalThis.fetch;
+
+  try {
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify({ notes: [] }), {
+        status: 401,
+        headers: { 'content-type': 'application/json' },
+      });
+
+    const [result] = await runAttackChecks({ ...config, step: 6 });
+
+    assert.equal(result.attackId, 'anonymous_note_read');
+    assert.match(result.observed, /메모를 확인하지 못함 \(HTTP 401\)/u);
   } finally {
     globalThis.fetch = originalFetch;
   }

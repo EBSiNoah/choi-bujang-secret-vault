@@ -90,7 +90,7 @@ A 본인 메모 id로 `GET`·`PUT`·`DELETE`를 보내면 정상이어야 합니
 확인 상태와 남은 일
 확인함: 가짜 DB로 A/B 시나리오 13개(본인 접근 유지, 상대 메모 접근 거부, 소유자 변경 거부, 무로그인 거부)를 로컬에서 시험했고 모두 통과했습니다.
 미확인: 실제 Supabase·Vercel 배포 환경에서의 시험 결과는 아직 기록하지 않았습니다. 위 "다시 확인하는 방법"을 실행한 뒤 결과를 여기에 적습니다.
-남은 일: DB 권한(RLS 등) SQL은 다음 단계에서 다룹니다. `/api/notes`와 `/api/memos`의 호출 제한은 아직 없습니다. `aleph.config.json`의 `step` 값은 `build-public.mjs`의 점검 때문에 아직 `1`이며, 저장점 단계에서 함께 정리합니다.
+남은 일: DB 권한(RLS 등) SQL은 다음 단계에서 다룹니다. `/api/notes`와 `/api/memos`의 호출 제한은 아직 없습니다. `aleph.config.json`의 `step` 값은 현재 6입니다.
 이 저장소에는 비밀번호·토큰·서버 전용 키를 넣지 않습니다.
 
 
@@ -138,7 +138,7 @@ Vercel 프로젝트 Settings → Environment Variables에 `SUPABASE_PUBLISHABLE_
 `api/notes.js`가 가상 메모를 `memos`에서 읽게 할지 결정합니다. 바꾼다면 `body`를 `content`로 바꿔 내보내고, 검증된 사용자의 행만 읽어야 4단계 보호가 유지됩니다.
 DB 권한(RLS) SQL은 다음 요청으로 남아 있습니다. `training_notes`의 RLS 상태 확인이 필요합니다.
 `/api/login`, `/api/notes`, `/api/memos`에는 호출 제한이 없습니다.
-`aleph.config.json`의 `step`은 `build-public.mjs`·`deployment-identity.mjs`의 점검 때문에 아직 `1`입니다. 저장점 단계에서 함께 정리합니다.
+`aleph.config.json`의 `step`은 현재 6이며, `build-public.mjs`와 `deployment-identity.mjs`는 1~12단계 값을 처리합니다.
 알려진 한계: 갱신 토큰을 쓰지 않아 로그인 후 약 1시간이 지나면 다시 로그인해야 하고, 로그아웃은 화면의 토큰만 지웁니다.
 다시 확인하는 방법
 배포 주소에서 A 계정으로 로그인해 메모를 추가·수정·삭제합니다. 정상이어야 합니다.

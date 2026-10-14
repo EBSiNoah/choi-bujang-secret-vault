@@ -1,8 +1,8 @@
 // Checks what a visitor without credentials can read from the public app.
 // Never include note bodies, tokens, or private keys in the result.
 export async function runAttackChecks(config) {
-  if (config.step !== 1 && config.step !== 2) {
-    throw new Error('이 단계의 공격 점검을 확인해 주세요.');
+  if (!Number.isInteger(config.step) || config.step < 1 || config.step > 12) {
+    throw new Error('aleph.config.json의 step은 1~12 정수여야 합니다.');
   }
 
   let app;
