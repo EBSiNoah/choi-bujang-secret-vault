@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { createLoginVerifier } from '../src/verify-login.mjs';
+import { RESOURCE_IDS, requireResourceId } from '../src/resource-id.mjs';
 
 const config = JSON.parse(
   readFileSync(new URL('../aleph.config.json', import.meta.url), 'utf8'),
@@ -17,6 +18,7 @@ function getVerifier() {
 
 export default async function handler(request, response) {
   response.setHeader('Cache-Control', 'no-store');
+  if (!requireResourceId(request, response, RESOURCE_IDS.instructorAnnouncements)) return;
 
   if (request.method !== 'GET') {
     response.setHeader('Allow', 'GET');

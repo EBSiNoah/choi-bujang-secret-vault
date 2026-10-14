@@ -166,3 +166,11 @@ npm run decider:test
 
 저장소 루트에서 `npm run decider:test && npm run fixture:7`을 실행해 가상 요청을 연습합니다. 정상 사건은 `allow`, 평소와 다른 시각·네트워크와 다량 읽기 사건이 겹친 가상 요청은 `step_up · step_up_required`여야 합니다. 확인된 가상 재요청은 `allow`입니다.
 이 판정기는 제공 엔진 계약의 `stepUp.verified`만 받으며, 같은 로그인으로 새로 로그인했는지 확인하는 계약은 없습니다. 따라서 실제 자료 차단과 재로그인 뒤 허용은 구현·실측하지 않았습니다. 이 연습은 실제 접속이나 심판 판정 증거가 아닙니다.
+
+## 8단계: 메모와 강사 공지를 자원 ID로 구분합니다
+
+화면 메뉴와 기존 API 주소는 유지합니다. 자료 요청은 `X-Resource-ID` 헤더를 함께 보내야 하며, 서버는 강사 공지(`/api/notes`)에 `instructor-announcements-v1`, 내 메모(`/api/memos`와 `/api/memos/:id`)에 `personal-memos-v1`만 허용합니다. ID가 없거나 다른 ID이면 `400`으로 거부하고, 응답의 `X-Resource-ID` 헤더에서 해당 경로의 자원 ID를 확인할 수 있습니다. 각 메모의 기존 `id`와 저장 자료는 변경하지 않습니다.
+
+판정기 규칙은 서비스도 별도로 구분합니다. `memos`의 GET·PUT·DELETE는 `/api/memos/:id` 한 건 경로만 허용하며, 목록·추가·다른 깊이의 경로는 거부합니다. `notes`는 `/api/notes/:id`의 GET만 허용하고 모든 쓰기 메서드를 거부합니다. `teacher-materials`와 알 수 없는 서비스·경로, 쿼리가 붙은 요청은 거부합니다. 실제 메모 소유자 비교는 판정기가 하지 않으며 제작 3의 API가 담당합니다. 이에 맞춰 `aleph.config.json`의 `allowedRoutes`에는 네 허용 경로만 메서드와 함께 적었습니다.
+
+예를 들어 공지는 `curl -H 'X-Resource-ID: instructor-announcements-v1' https://배포주소/api/notes`, 메모 목록은 `curl -H 'X-Resource-ID: personal-memos-v1' https://배포주소/api/memos`처럼 요청합니다. 로그인 필요한 메모 API에는 이 헤더와 함께 기존 `Authorization` 헤더도 보내야 합니다. 로그인 자체(`/api/login`)는 자원 조회·변경 요청이 아닙니다.
