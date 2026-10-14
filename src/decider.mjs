@@ -15,6 +15,7 @@ const SIGNAL_FIELDS = Object.freeze(['source', 'region', 'network', 'hour']);
 const EVENT_FIELDS = Object.freeze(['kind', 'ageSeconds', 'count']);
 const STEP_UP_FIELDS = Object.freeze(['verified', 'authAgeSeconds']);
 const MEMO_METHODS = new Set(['GET', 'PUT', 'DELETE']);
+const MEMO_SERVICES = new Set(['memos', 'notes']);
 const MEMO_PATH = /^\/api\/memos\/[^/?#]+$/u;
 const ANNOUNCEMENT_PATH = /^\/api\/notes\/[^/?#]+$/u;
 
@@ -76,11 +77,15 @@ function hasValidRequest(request) {
 
 function isAllowedResourceRoute(request) {
   // This authorizes resource route shapes only; memo ownership remains an API check.
-  if (request.service === 'memos') {
-    return MEMO_PATH.test(request.path)
+  if (MEMO_SERVICES.has(request.service)
+      && MEMO_PATH.test(request.path)
       && MEMO_METHODS.has(request.method)
       && request.route === `${request.method} /api/memos/:id`
-      && request.queryLength === 0;
+      && request.queryLength === 0) {
+    return true;
+  }
+  if (request.service === 'memos') {
+    return false;
   }
   if (request.service === 'notes') {
     return ANNOUNCEMENT_PATH.test(request.path)

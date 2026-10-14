@@ -94,6 +94,17 @@ test('allows a memo selected by exactly one resource ID without restricting its 
   }
 });
 
+test('allows the existing notes service to read one memo by its exact API route', async () => {
+  const { normal } = fixtureRequests();
+  const response = await decide({
+    ...normal,
+    service: 'notes',
+    path: '/api/memos/own-memo-id',
+  });
+
+  assert.equal(response.decision, 'allow');
+});
+
 test('denies collection, nested feature, mismatched route, and query-selected memo requests', async () => {
   const { normal } = fixtureRequests();
   const invalidRoutes = [
