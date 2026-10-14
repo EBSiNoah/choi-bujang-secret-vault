@@ -138,7 +138,7 @@ Vercel 프로젝트 Settings → Environment Variables에 `SUPABASE_PUBLISHABLE_
 `api/notes.js`가 가상 메모를 `memos`에서 읽게 할지 결정합니다. 바꾼다면 `body`를 `content`로 바꿔 내보내고, 검증된 사용자의 행만 읽어야 4단계 보호가 유지됩니다.
 DB 권한(RLS) SQL은 다음 요청으로 남아 있습니다. `training_notes`의 RLS 상태 확인이 필요합니다.
 `/api/login`, `/api/notes`, `/api/memos`에는 호출 제한이 없습니다.
-`aleph.config.json`의 `step`은 현재 6이며, `build-public.mjs`와 `deployment-identity.mjs`는 1~12단계 값을 처리합니다.
+`aleph.config.json`의 `step`은 현재 7이며, `build-public.mjs`와 `deployment-identity.mjs`는 1~12단계 값을 처리합니다.
 알려진 한계: 갱신 토큰을 쓰지 않아 로그인 후 약 1시간이 지나면 다시 로그인해야 하고, 로그아웃은 화면의 토큰만 지웁니다.
 다시 확인하는 방법
 배포 주소에서 A 계정으로 로그인해 메모를 추가·수정·삭제합니다. 정상이어야 합니다.
@@ -161,3 +161,8 @@ npm run decider:test
 ```
 
 정상 결과에서 `통과 · 등록 기기의 정상 요청: allow · approved`가 보여야 합니다. 미등록 기기의 가상 요청은 `통과 · 미등록 기기의 가상 요청: deny · device_not_registered`로 표시되어야 합니다. 여기서 `통과`는 판정기가 가상 요청에 기대한 응답을 냈다는 뜻입니다. 이 연습은 실제 기기 등록이나 자료실 접속을 시험하지 않습니다. 미등록 기기 공격 시험과 심판 판정은 심판이 맡습니다.
+
+## 7단계: 평소와 다른 접속은 다시 확인합니다
+
+저장소 루트에서 `npm run decider:test && npm run fixture:7`을 실행해 가상 요청을 연습합니다. 정상 사건은 `allow`, 평소와 다른 시각·네트워크와 다량 읽기 사건이 겹친 가상 요청은 `step_up · step_up_required`여야 합니다. 확인된 가상 재요청은 `allow`입니다.
+이 판정기는 제공 엔진 계약의 `stepUp.verified`만 받으며, 같은 로그인으로 새로 로그인했는지 확인하는 계약은 없습니다. 따라서 실제 자료 차단과 재로그인 뒤 허용은 구현·실측하지 않았습니다. 이 연습은 실제 접속이나 심판 판정 증거가 아닙니다.
