@@ -31,6 +31,17 @@ test('rejects absent, unclear, or client-supplied access signals instead of fill
   }
 });
 
+test('rejects unsupported role, identity, and device request fields', async () => {
+  const { normal } = fixtureRequests();
+
+  for (const field of ['role', 'identity', 'device']) {
+    await assert.rejects(
+      decide({ ...normal, [field]: {} }),
+      { name: 'TypeError', message: 'Invalid engine decision request' },
+    );
+  }
+});
+
 test('sends the composite unusual-access fixture to step-up with a reason', async () => {
   const { suspicious } = fixtureRequests();
 
