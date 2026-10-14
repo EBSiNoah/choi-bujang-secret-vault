@@ -1,6 +1,10 @@
 // ALEPH SDP 엔진이 확인한 요청만 받는 학생 판정기 시작점입니다.
 // 계약에 없는 값을 만들거나 클라이언트 입력으로 접속 신호를 채우지 마세요.
-export const RULE_IDS = Object.freeze(['device_registered', 'step_up_required']);
+export const RULE_IDS = Object.freeze([
+  'device_registered',
+  'step_up_required',
+  'resource_route_policy',
+]);
 
 const REQUEST_FIELDS = Object.freeze([
   'schema', 'requestId', 'classId', 'projectId', 'subjectId', 'deviceId',
@@ -10,6 +14,9 @@ const REQUEST_FIELDS = Object.freeze([
 const SIGNAL_FIELDS = Object.freeze(['source', 'region', 'network', 'hour']);
 const EVENT_FIELDS = Object.freeze(['kind', 'ageSeconds', 'count']);
 const STEP_UP_FIELDS = Object.freeze(['verified', 'authAgeSeconds']);
+const MEMO_METHODS = new Set(['GET', 'PUT', 'DELETE']);
+const MEMO_PATH = /^\/api\/memos\/[^/?#]+$/u;
+const ANNOUNCEMENT_PATH = /^\/api\/notes\/[^/?#]+$/u;
 
 function hasExactFields(value, fields) {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -67,15 +74,44 @@ function hasValidRequest(request) {
     && hasValidSignals(request.signals);
 }
 
+function isAllowedResourceRoute(request) {
+  // This authorizes resource route shapes only; memo ownership remains an API check.
+  if (request.service === 'memos') {
+    return MEMO_PATH.test(request.path)
+      && MEMO_METHODS.has(request.method)
+      && request.route === `${request.method} /api/memos/:id`
+      && request.queryLength === 0;
+  }
+  if (request.service === 'notes') {
+    return ANNOUNCEMENT_PATH.test(request.path)
+      && request.method === 'GET'
+      && request.route === 'GET /api/notes/:id'
+      && request.queryLength === 0;
+  }
+  return false;
+}
+
 export async function decide(request) {
   if (!hasValidRequest(request)) throw new TypeError('Invalid engine decision request');
+  if (!isAllowedResourceRoute(request)) {
+    return {
+      schema: 'aleph.decision.v1',
+      requestId: request.requestId,
+      decision: 'deny',
+      reasonCode: 'resource_route_not_allowed',
+      ruleIds: ['resource_route_policy'],
+    };
+  }
+
   const registered = request.deviceRegistered === true;
   const unusualAccess = request.signals.source === 'judge_fixture'
     && request.signals.network === 'unusual'
     && (request.signals.hour < 6 || request.signals.hour >= 22)
     && request.recentEvents.some(event => event.kind === 'risk_signal' && event.count >= 10);
   const needsStepUp = registered && unusualAccess && !request.stepUp.verified;
-  const ruleIds = unusualAccess ? RULE_IDS : [RULE_IDS[0]];
+  const ruleIds = unusualAccess
+    ? ['resource_route_policy', 'device_registered', 'step_up_required']
+    : ['resource_route_policy', 'device_registered'];
 
   return {
     schema: 'aleph.decision.v1',

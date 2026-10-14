@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createLoginVerifier } from './verify-login.mjs';
+import { requireResourceId } from './resource-id.mjs';
 
 const config = JSON.parse(
   readFileSync(new URL('../aleph.config.json', import.meta.url), 'utf8'),
@@ -24,8 +25,10 @@ export function parseMemo(body) {
 
 // 메서드·설정·로그인을 확인합니다. 통과하면 { userId, rest } 를 돌려주고,
 // 거부할 때는 응답을 이미 보낸 뒤 null 을 돌려줍니다.
-export async function memosContext(request, response, methods) {
+export async function memosContext(request, response, methods, resourceId) {
   response.setHeader('Cache-Control', 'no-store');
+
+  if (!requireResourceId(request, response, resourceId)) return null;
 
   if (!methods.includes(request.method)) {
     response.setHeader('Allow', methods.join(', '));
