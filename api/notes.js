@@ -34,8 +34,9 @@ export default async function handler(request, response) {
   try {
     const base = new URL(supabaseUrl);
     if (base.protocol !== 'https:') throw new Error();
-    endpoint = new URL('/rest/v1/memos', base);
+    endpoint = new URL('/rest/v1/training_notes', base);
     endpoint.searchParams.set('select', 'title,content');
+    endpoint.searchParams.set('owner_id', 'is.null');
     endpoint.searchParams.set('order', 'id.asc');
   } catch {
     return response.status(500).json({ error: 'SERVER_CONFIGURATION_ERROR' });

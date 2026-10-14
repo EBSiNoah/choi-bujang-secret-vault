@@ -123,7 +123,7 @@ API와 허용 경로
 `aleph.config.json`의 `allowedRoutes`와 같습니다.
 메서드·경로	동작	로그인 없음
 `POST /api/login`	이메일·비밀번호 → `{access_token, expires_in, email}`	-
-`GET /api/notes`	가상 메모 `{notes:[{title,content}]}`	`401`
+`GET /api/notes`	`training_notes`의 공용 가상 공지(`owner_id` 없음) `{notes:[{title,content}]}`	`401`
 `GET /api/memos`	본인 메모 배열	`401`
 `POST /api/memos`	`{id?,title,body}` → `201 {id}`	`401`
 `GET /api/memos/:id`	`{id,title,body}`, 남의 메모는 `404`	`401`
