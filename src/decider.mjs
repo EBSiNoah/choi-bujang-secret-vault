@@ -28,6 +28,15 @@ function hasExactFields(value, fields) {
     && fields.every(field => Object.hasOwn(value, field));
 }
 
+function hasExactRequestFields(request) {
+  if (request === null || typeof request !== 'object' || Array.isArray(request)) return false;
+  const keys = Object.keys(request);
+  return keys.every(field => REQUEST_FIELDS.includes(field))
+    && REQUEST_FIELDS.every(field => field === 'deviceRegistered' || Object.hasOwn(request, field))
+    && (request.deviceRegistered === undefined || request.deviceRegistered === null
+      || typeof request.deviceRegistered === 'boolean');
+}
+
 function isHour(value) {
   return value === 'unknown' || Number.isInteger(value) && value >= 0 && value <= 23;
 }
@@ -112,7 +121,7 @@ function hasKnownResourcePath(request) {
 }
 
 function hasValidRequest(request) {
-  if (!hasExactFields(request, REQUEST_FIELDS) || request.schema !== 'aleph.decision.v2') return false;
+  if (!hasExactRequestFields(request) || request.schema !== 'aleph.decision.v2') return false;
   const textFields = [
     'requestId', 'classId', 'projectId', 'subjectId', 'service', 'method', 'path', 'route', 'resourceId',
   ];
@@ -125,7 +134,6 @@ function hasValidRequest(request) {
     && new Date(Date.parse(request.at)).toISOString() === request.at
     && (typeof request.policyRevision === 'string' && request.policyRevision.length > 0
       || Number.isSafeInteger(request.policyRevision) && request.policyRevision >= 0)
-    && typeof request.deviceRegistered === 'boolean'
     && hasValidStepUp(request.stepUp)
     && hasValidRecentEvents(request.recentEvents)
     && hasValidSignals(request.signals)

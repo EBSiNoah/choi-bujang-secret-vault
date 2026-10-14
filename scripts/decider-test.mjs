@@ -52,6 +52,11 @@ export async function checkDecider({ decide, ruleIds }) {
     { name: '등록 기기의 정상 공지 읽기', request: normal, decision: 'allow' },
     { name: '미등록 기기의 가상 요청', request: fixtureRequest({ deviceRegistered: false }),
       decision: 'deny', reasonCode: 'device_not_registered' },
+    { name: '등록 상태 값이 없는 가상 요청', request: (() => {
+      const request = fixtureRequest();
+      delete request.deviceRegistered;
+      return request;
+    })(), decision: 'deny', reasonCode: 'device_not_registered' },
     { name: '자료 ID 자리에 온 기능 경로', request: fixtureRequest({ path: '/notes/export' }),
       decision: 'deny', reasonCode: 'unknown_path' },
     { name: '자료 아래 중첩된 기능 경로', request: fixtureRequest({
