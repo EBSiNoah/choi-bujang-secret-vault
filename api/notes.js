@@ -22,9 +22,6 @@ export default async function handler(request, response) {
     response.setHeader('Allow', 'GET');
     return response.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
   }
-  if (request.headers['x-vault-resource-id'] !== 'teacher-announcements') {
-    return response.status(400).json({ error: 'INVALID_RESOURCE_ID' });
-  }
 
   const supabaseUrl = process.env.SUPABASE_URL;
   const secretKey = process.env.SUPABASE_SECRET_KEY;
@@ -37,9 +34,8 @@ export default async function handler(request, response) {
   try {
     const base = new URL(supabaseUrl);
     if (base.protocol !== 'https:') throw new Error();
-    endpoint = new URL('/rest/v1/training_notes', base);
-    endpoint.searchParams.set('select', 'id,owner_id,title,content');
-    endpoint.searchParams.set('owner_id', 'is.null');
+    endpoint = new URL('/rest/v1/memos', base);
+    endpoint.searchParams.set('select', 'title,content');
     endpoint.searchParams.set('order', 'id.asc');
   } catch {
     return response.status(500).json({ error: 'SERVER_CONFIGURATION_ERROR' });
@@ -59,9 +55,6 @@ export default async function handler(request, response) {
   if (!identity) {
     return response.status(401).json({ error: 'LOGIN_REQUIRED' });
   }
-  if (identity.kind !== 'student') {
-    return response.status(403).json({ error: 'STUDENT_ACCESS_REQUIRED' });
-  }
 
   try {
     const upstream = await fetch(endpoint, {
@@ -78,17 +71,14 @@ export default async function handler(request, response) {
     }
 
     const rows = await upstream.json();
-    if (!Array.isArray(rows) || rows.some(row => row?.owner_id !== null)) {
-      return response.status(403).json({ error: 'NOTICE_OWNER_MISMATCH' });
-    }
-    if (rows.some(row => typeof row.id !== 'string' ||
-                         typeof row.title !== 'string' ||
+    if (!Array.isArray(rows) ||
+        rows.some(row => typeof row.title !== 'string' ||
                          typeof row.content !== 'string')) {
       return response.status(502).json({ error: 'INVALID_NOTES_RESPONSE' });
     }
 
     return response.status(200).json({
-      notes: rows.map(({ id, title, content }) => ({ id, title, content })),
+      notes: rows.map(({ title, content }) => ({ title, content })),
     });
   } catch {
     // 키나 Supabase 오류 내용을 응답·로그에 남기지 않습니다.

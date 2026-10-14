@@ -2,47 +2,25 @@ import { createHash, randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// Local practice requests use the expanded engine contract. The judge sends and times its own events.
-export function fixtureRequest(overrides = {}) {
-  const base = {
-    schema: 'aleph.decision.v2', requestId: randomUUID(), classId: 'class_fixture',
-    projectId: 'project_fixture', subjectId: 'learner_fixture', deviceId: 'a'.repeat(16),
-    service: 'notes', method: 'GET',
-    path: '/notes/00000000-0000-4000-8000-000000000001', route: 'GET /notes/:id',
-    resourceId: 'teacher-announcements', queryLength: 0,
-    querySha256: createHash('sha256').update('').digest('hex'),
-    at: new Date().toISOString(), policyRevision: 1, deviceRegistered: true,
-    stepUp: { verified: false, authAgeSeconds: null }, recentEvents: [],
-    signals: { source: 'judge_fixture', region: 'local', network: 'usual', hour: 14 },
-  };
-  const request = { ...base, ...overrides };
-  const suppliedAuthorization = overrides.verifiedAuthorization ?? {};
-  request.verifiedAuthorization = {
-    requestId: request.requestId,
-    subjectId: request.subjectId,
-    resourceId: request.resourceId,
-    service: request.service,
-    method: request.method,
-    path: request.path,
-    memoOwnerMatchesSubject: null,
-    canEditAnnouncements: false,
-    ...suppliedAuthorization,
-  };
-  return request;
-}
-
+// Local practice requests use the engine's public input shape. The judge sends and times its own events.
+const request = (signals, recentEvents) => ({
+  schema: 'aleph.decision.v1', requestId: randomUUID(), classId: 'class_fixture',
+  projectId: 'project_fixture', subjectId: 'learner_fixture', deviceId: 'a'.repeat(16),
+  service: 'notes', method: 'GET', path: '/notes/demo', route: 'GET /notes/:id',
+  queryLength: 0, querySha256: createHash('sha256').update('').digest('hex'),
+  at: new Date().toISOString(), policyRevision: 1, deviceRegistered: true,
+  stepUp: { verified: false, authAgeSeconds: null }, recentEvents, signals,
+});
 export function fixtureRequests() {
   return {
-    normal: fixtureRequest(),
-    suspicious: fixtureRequest({
-      signals: { source: 'judge_fixture', region: 'foreign', network: 'unusual', hour: 3 },
-      recentEvents: [{ kind: 'burst_read', ageSeconds: 60, count: 121 }],
-    }),
+    normal: request({ source: 'judge_fixture', region: 'local', network: 'usual', hour: 14 }, []),
+    suspicious: request({ source: 'judge_fixture', region: 'foreign', network: 'unusual', hour: 3 },
+      [{ kind: 'risk_signal', ageSeconds: 60, count: 20 }]),
   };
 }
 const check = (input, output) => output && typeof output === 'object'
   && Object.keys(output).sort().join(',') === 'decision,reasonCode,requestId,ruleIds,schema'
-  && output.schema === input.schema && output.requestId === input.requestId
+  && output.schema === 'aleph.decision.v1' && output.requestId === input.requestId
   && ['allow', 'deny', 'step_up'].includes(output.decision)
   && typeof output.reasonCode === 'string' && Array.isArray(output.ruleIds);
 
