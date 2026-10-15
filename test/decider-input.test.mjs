@@ -90,7 +90,7 @@ test('allows one memo ID without restricting its format and keeps the memo metho
     assert.equal((await decide({
       ...request,
       method,
-      route: `${method} /api/memos/:id`,
+      route: `${method} /memos/:id`,
     })).decision, 'allow');
   }
 });
@@ -111,16 +111,16 @@ test('allows a class announcement only through the notes service and exact singl
     service: 'notes',
     method: 'GET',
     path: '/api/notes/announcement-id',
-    route: 'GET /api/notes/:id',
+    route: 'GET /notes/:id',
   };
 
   assert.equal((await decide(announcement)).decision, 'allow');
   for (const wrongRoute of [
-    { service: 'memos', path: '/api/notes/announcement-id', route: 'GET /api/notes/:id' },
-    { service: 'notes', path: '/api/memos/own-memo-id', route: 'GET /api/memos/:id' },
-    { service: 'notes', path: '/api/notes', route: 'GET /api/notes' },
-    { service: 'notes', path: '/api/notes/announcement-id/export', route: 'GET /api/notes/:id/export' },
-    { service: 'notes', path: '/api/notes/announcement-id', route: 'GET /api/notes/export' },
+    { service: 'memos', path: '/api/notes/announcement-id', route: 'GET /notes/:id' },
+    { service: 'notes', path: '/api/memos/own-memo-id', route: 'GET /memos/:id' },
+    { service: 'notes', path: '/api/notes', route: 'GET /notes' },
+    { service: 'notes', path: '/api/notes/announcement-id/export', route: 'GET /notes/:id/export' },
+    { service: 'notes', path: '/api/notes/announcement-id', route: 'GET /notes/export' },
   ]) {
     const response = await decide({ ...announcement, ...wrongRoute });
     assert.equal(response.decision, 'deny');
@@ -131,13 +131,13 @@ test('allows a class announcement only through the notes service and exact singl
 test('denies memo collections, nested feature routes, wrong route shapes, and query-selected resources', async () => {
   const { normal } = fixtureRequests();
   const invalidRoutes = [
-    { path: '/api/memos', route: 'GET /api/memos' },
-    { path: '/api/memos/demo/export', route: 'GET /api/memos/:id/export' },
-    { path: '/api/memos/demo', route: 'GET /api/memos/export' },
-    { path: '/api/memos/export', route: 'GET /api/memos/export' },
+    { path: '/api/memos', route: 'GET /memos' },
+    { path: '/api/memos/demo/export', route: 'GET /memos/:id/export' },
+    { path: '/api/memos/demo', route: 'GET /memos/export' },
+    { path: '/api/memos/export', route: 'GET /memos/export' },
     { path: '/api/memos/demo', queryLength: 1 },
-    { method: 'POST', path: '/api/memos/demo', route: 'POST /api/memos/:id' },
-    { method: 'PATCH', path: '/api/memos/demo', route: 'PATCH /api/memos/:id' },
+    { method: 'POST', path: '/api/memos/demo', route: 'POST /memos/:id' },
+    { method: 'PATCH', path: '/api/memos/demo', route: 'PATCH /memos/:id' },
   ];
 
   for (const change of invalidRoutes) {
@@ -154,7 +154,7 @@ test('allows only GET for a single class announcement and denies its write metho
     service: 'notes',
     method: 'GET',
     path: '/api/notes/announcement-id',
-    route: 'GET /api/notes/:id',
+    route: 'GET /notes/:id',
   };
 
   assert.equal((await decide(announcement)).decision, 'allow');
@@ -163,7 +163,7 @@ test('allows only GET for a single class announcement and denies its write metho
     const response = await decide({
       ...announcement,
       method,
-      route: `${method} /api/notes/:id`,
+      route: `${method} /notes/:id`,
     });
     assert.equal(response.decision, 'deny');
     assert.equal(response.reasonCode, 'resource_route_not_allowed');

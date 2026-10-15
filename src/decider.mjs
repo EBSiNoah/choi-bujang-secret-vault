@@ -55,13 +55,13 @@ function isAllowedResourceRoute(request) {
 
   if (request.service === 'memos'
       && ['GET', 'PUT', 'DELETE'].includes(request.method)
-      && request.route === `${request.method} /api/memos/:id`) {
+      && request.route === `${request.method} /memos/:id`) {
     return isSingleResourcePath(request.path, '/api/memos');
   }
 
   return request.service === 'notes'
     && request.method === 'GET'
-    && request.route === 'GET /api/notes/:id'
+    && request.route === 'GET /notes/:id'
     && isSingleResourcePath(request.path, '/api/notes');
 }
 
