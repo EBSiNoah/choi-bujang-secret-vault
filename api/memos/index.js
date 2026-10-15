@@ -1,6 +1,9 @@
 import { memosContext, parseMemo, isUuid, newId } from '../../src/memos.mjs';
+import { requireResourceId, RESOURCE_IDS } from '../../src/resource-id.mjs';
 
 export default async function handler(request, response) {
+  if (!requireResourceId(request, response, RESOURCE_IDS.personalMemos)) return;
+
   const ctx = await memosContext(request, response, ['GET', 'POST']);
   if (!ctx) return;
 
