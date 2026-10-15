@@ -135,18 +135,18 @@ API와 허용 경로
 남은 일
 Vercel 프로젝트 Settings → Environment Variables에 `SUPABASE_PUBLISHABLE_KEY`를 추가하고 다시 배포합니다. 없으면 로그인이 `500`입니다.
 배포 후 `/aleph.json`에 `originalApiUrl`과 `allowedRoutes`가 보이는지 확인하고, 심판을 다시 돌립니다.
-`api/notes.js`는 `training_notes`에서 `owner_id`가 없는 공용 가상 공지를 읽습니다. 메모 API와 분리된 자원 ID를 요구합니다.
+`api/notes.js`가 가상 메모를 `memos`에서 읽게 할지 결정합니다. 바꾼다면 `body`를 `content`로 바꿔 내보내고, 검증된 사용자의 행만 읽어야 4단계 보호가 유지됩니다.
 DB 권한(RLS) SQL은 다음 요청으로 남아 있습니다. `training_notes`의 RLS 상태 확인이 필요합니다.
 `/api/login`, `/api/notes`, `/api/memos`에는 호출 제한이 없습니다.
-`aleph.config.json`의 `step`은 현재 8이며, `build-public.mjs`와 `deployment-identity.mjs`는 1~12단계 값을 처리합니다.
+`aleph.config.json`의 `step`은 현재 7이며, `build-public.mjs`와 `deployment-identity.mjs`는 1~12단계 값을 처리합니다.
 알려진 한계: 갱신 토큰을 쓰지 않아 로그인 후 약 1시간이 지나면 다시 로그인해야 하고, 로그아웃은 화면의 토큰만 지웁니다.
 다시 확인하는 방법
 배포 주소에서 A 계정으로 로그인해 메모를 추가·수정·삭제합니다. 정상이어야 합니다.
-시크릿 창에서 `curl -i -H 'X-Resource-ID: personal-memos-v1' https://배포주소/api/memos`를 실행합니다. `401`로 거부되어야 합니다.
+시크릿 창에서 `curl -i https://배포주소/api/memos`를 실행합니다. `401`로 거부되어야 합니다.
 A로 로그인한 상태에서 `F12` → Console에 아래를 실행합니다. B의 시험 메모는 `404`로 거부되어야 합니다.
 ```js
    const t = sessionStorage.getItem('vault.token');
-   await fetch('/api/memos/00000000-0000-4000-8000-00000000b001', { headers: { Authorization: 'Bearer ' + t, 'X-Resource-ID': 'personal-memos-v1' } }).then(r => r.status);
+   await fetch('/api/memos/00000000-0000-4000-8000-00000000b001', { headers: { Authorization: 'Bearer ' + t } }).then(r => r.status);
    ```
 `curl -s https://배포주소/aleph.json`에 `originalApiUrl`과 `allowedRoutes`가 있어야 합니다.
 배포된 첫 화면의 소스 보기에서 `supabase`, `sb_`를 검색해 결과가 없어야 합니다.
@@ -167,13 +167,3 @@ npm run decider:test
 저장소 루트에서 `npm run fixture:7 && npm run decider:test`를 실행해 가상 사건을 연습합니다. 정상 요청은 `allow`, 평소와 다른 시각·네트워크와 다량 읽기가 겹친 가상 사건은 `step_up`이어야 합니다. 미등록 기기는 계속 `deny`이며, 확인 완료로 표시된 가상 재요청은 `allow`입니다.
 
 현재 엔진 계약에는 같은 로그인으로 다시 인증했는지 증명하는 정보가 없습니다. 실제 자료의 사전 차단과 새 로그인 뒤 재판정은 미구현·미실행이며, 위 명령은 가상 요청 연습이지 실제 접속이나 심판 판정 증거가 아닙니다.
-
-## 8단계: 자료 종류마다 자원 ID를 구분합니다
-
-공지 요청은 `X-Resource-ID: instructor-announcements-v1`, 내 메모 요청은 `X-Resource-ID: personal-memos-v1`을 보냅니다. 서버는 경로에 지정된 ID만 받아들이며, 누락되거나 다른 종류의 ID이면 `400`으로 거부하고 기대한 ID를 `X-Resource-ID` 응답 헤더로 돌려줍니다.
-
-기존 API 주소와 화면 메뉴는 유지하고, 강사용 서버 관리 경로를 추가했습니다. 로컬 확인은 저장소 루트에서 `node --test test/resource-id.test.mjs test/r5.test.mjs test/instructors.test.mjs`를 실행합니다. 올바른 ID를 보낸 요청은 기존 로그인·권한 검사로 이어지고, ID가 없거나 다른 종류의 ID를 보낸 요청은 거부되어야 합니다.
-
-API는 메뉴와 무관하게 권한을 다시 검사합니다. 메모 목록·단건 API는 검증된 사용자 ID와 저장된 `owner_id`를 비교해 다른 사용자의 행을 반환하지 않습니다. 강사 공지 수정은 `PUT /api/notes/:id` 관리 경로에서 로그인 토큰의 사용자 ID를 관리자 등록 `public.instructors.user_id`와 대조하고, `owner_id`가 없는 공지 행만 수정합니다. 권한이 없으면 `403 INSTRUCTOR_REQUIRED`, 다른 메모·없는 공지는 `404 NOT_FOUND`로 거부됩니다. 마이그레이션 적용 후 강사 등록은 관리자가 DB에서 수행해야 하며, 요청 본문의 `role`은 사용하지 않습니다.
-
-판정기의 `allowedRoutes`는 학생 판정에 쓰는 경로만 담습니다. 강사 관리용 `PUT /api/notes/:id`는 판정기 경로가 아니라 서버 API가 저장된 강사 등록을 직접 확인하는 경로입니다.

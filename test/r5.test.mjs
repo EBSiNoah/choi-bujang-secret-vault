@@ -36,7 +36,7 @@ test('build identity preserves a later supported stage', () => {
   assert.equal(deploymentIdentity(env, stageSixConfig).step, 6);
 });
 
-test('attack check identifies the notes resource without credentials', async () => {
+test('attack check reads the public notes API without credentials', async () => {
   const originalFetch = globalThis.fetch;
   let requestUrl;
   let options;
@@ -66,9 +66,7 @@ test('attack check identifies the notes resource without credentials', async () 
       'https://student-defense.vercel.app/api/notes'
     );
     assert.equal(options.redirect, 'error');
-    assert.deepEqual(options.headers, {
-      'X-Resource-ID': 'instructor-announcements-v1',
-    });
+    assert.equal('headers' in options, false);
     assert.match(result.observed, /메모 1건을 반환/u);
 
     globalThis.fetch = async () =>

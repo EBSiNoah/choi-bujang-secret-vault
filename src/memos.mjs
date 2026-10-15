@@ -12,16 +12,6 @@ let verifyLogin;
 export const isUuid = (value) => typeof value === 'string' && UUID.test(value);
 export const newId = () => randomUUID();
 
-export function selectOwnedMemos(rows, userId) {
-  if (!Array.isArray(rows)) return null;
-  const owned = rows.filter((row) => row?.owner_id === userId);
-  if (owned.some((row) => typeof row.id !== 'string'
-      || typeof row.title !== 'string' || typeof row.body !== 'string')) {
-    return null;
-  }
-  return owned.map(({ id, title, body }) => ({ id, title, body }));
-}
-
 // 제목·내용만 꺼냅니다. owner_id, userId, role 같은 값은 body 에 있어도 무시합니다.
 export function parseMemo(body) {
   if (!body || typeof body !== 'object') return null;

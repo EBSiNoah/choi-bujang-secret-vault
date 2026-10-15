@@ -88,10 +88,6 @@
     const say = (text) => { $('msg').textContent = text; };
     const TOKEN_KEY = 'vault.token';   // sessionStorage: 탭을 닫으면 사라집니다
     const EMAIL_KEY = 'vault.email';
-    const RESOURCE_IDS = Object.freeze({
-      instructorAnnouncements: 'instructor-announcements-v1',
-      personalMemos: 'personal-memos-v1',
-    });
     let editingId = null;
 
     const msgItem = (text) => Object.assign(document.createElement('li'), { textContent: text });
@@ -113,13 +109,12 @@
 
     // 모든 자료 요청은 이 서버(/api/...)로만 보냅니다. 외부 서비스에 직접 요청하지 않으므로
     // 화면 코드에는 어떤 키도 들어 있지 않습니다. userId·role 도 보내지 않습니다.
-    async function api(path, resourceId, options = {}) {
+    async function api(path, options = {}) {
       const token = sessionStorage.getItem(TOKEN_KEY);
       const response = await fetch(path, {
         cache: 'no-store',
         ...options,
         headers: {
-          'X-Resource-ID': resourceId,
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
           ...(options.body ? { 'Content-Type': 'application/json' } : {}),
         },
@@ -140,7 +135,7 @@
       const list = $('notes');
       list.replaceChildren(msgItem('자료를 불러오는 중입니다.'));
       try {
-        const response = await api('/api/notes', RESOURCE_IDS.instructorAnnouncements);
+        const response = await api('/api/notes');
         if (response.status === 401) return;
         if (!response.ok) throw new Error('자료를 불러오지 못했습니다.');
         const data = await response.json();
@@ -227,7 +222,7 @@
       };
       del.onclick = async () => {
         if (!confirm('이 메모를 삭제할까요?')) return;
-        const response = await api(`/api/memos/${memo.id}`, RESOURCE_IDS.personalMemos, { method: 'DELETE' });
+        const response = await api(`/api/memos/${memo.id}`, { method: 'DELETE' });
         if (!response.ok && response.status !== 404) {
           if (response.status !== 401) say('메모를 삭제하지 못했습니다.');
           return;
@@ -244,7 +239,7 @@
     async function loadMemos() {
       const list = $('memos');
       try {
-        const response = await api('/api/memos', RESOURCE_IDS.personalMemos);
+        const response = await api('/api/memos');
         if (response.status === 401) return;
         if (!response.ok) throw new Error('메모를 불러오지 못했습니다.');
         const memos = await response.json();
@@ -261,8 +256,8 @@
       if (!title) return say('제목을 입력하세요.');
       const payload = JSON.stringify({ title, body: $('memo-body').value });
       const response = editingId
-        ? await api(`/api/memos/${editingId}`, RESOURCE_IDS.personalMemos, { method: 'PUT', body: payload })
-        : await api('/api/memos', RESOURCE_IDS.personalMemos, { method: 'POST', body: payload });
+        ? await api(`/api/memos/${editingId}`, { method: 'PUT', body: payload })
+        : await api('/api/memos', { method: 'POST', body: payload });
       if (!response.ok) {
         if (response.status !== 401) say('메모를 저장하지 못했습니다.');
         return;

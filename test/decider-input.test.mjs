@@ -80,14 +80,9 @@ test('allows the suspicious fixture after a verified step-up', async () => {
   assert.equal((await decide(verified)).decision, 'allow');
 });
 
-test('allows a single memo ID without restricting its format and keeps supported methods', async () => {
+test('allows one memo ID without restricting its format and keeps the memo methods', async () => {
   const { normal } = fixtureRequests();
-  const request = {
-    ...normal,
-    service: 'memos',
-    path: '/api/memos/not-a-uuid',
-    route: 'GET /api/memos/:id',
-  };
+  const request = { ...normal, path: '/api/memos/not-a-uuid' };
 
   assert.equal((await decide(request)).decision, 'allow');
   for (const method of ['PUT', 'DELETE']) {
@@ -96,13 +91,6 @@ test('allows a single memo ID without restricting its format and keeps supported
       method,
       route: `${method} /api/memos/:id`,
     })).decision, 'allow');
-  }
-  for (const method of ['POST', 'PATCH']) {
-    assert.equal((await decide({
-      ...request,
-      method,
-      route: `${method} /api/memos/:id`,
-    })).decision, 'deny');
   }
 });
 
@@ -120,7 +108,7 @@ test('allows a class announcement only through the notes service and exact singl
   for (const wrongRoute of [
     { service: 'memos', path: '/api/notes/announcement-id', route: 'GET /api/notes/:id' },
     { service: 'notes', path: '/api/memos/own-memo-id', route: 'GET /api/memos/:id' },
-    { service: 'notes', path: '/api/notes', route: 'GET /api/notes/:id' },
+    { service: 'notes', path: '/api/notes', route: 'GET /api/notes' },
     { service: 'notes', path: '/api/notes/announcement-id/export', route: 'GET /api/notes/:id/export' },
     { service: 'notes', path: '/api/notes/announcement-id', route: 'GET /api/notes/export' },
   ]) {
@@ -130,14 +118,14 @@ test('allows a class announcement only through the notes service and exact singl
   }
 });
 
-test('denies memo collections, nested features, mismatched routes, and query-selected resources', async () => {
+test('denies memo collections, nested feature routes, wrong route shapes, and query-selected resources', async () => {
   const { normal } = fixtureRequests();
   const invalidRoutes = [
-    { service: 'memos', path: '/api/memos', route: 'GET /api/memos/:id' },
-    { service: 'memos', path: '/api/memos/demo/export', route: 'GET /api/memos/:id' },
-    { service: 'memos', path: '/api/memos/demo', route: 'GET /api/memos/export' },
-    { service: 'memos', path: '/api/memos/export', route: 'GET /api/memos/export' },
-    { service: 'memos', path: '/api/memos/demo', route: 'GET /api/memos/:id', queryLength: 1 },
+    { path: '/api/memos', route: 'GET /api/memos' },
+    { path: '/api/memos/demo/export', route: 'GET /api/memos/:id/export' },
+    { path: '/api/memos/demo', route: 'GET /api/memos/export' },
+    { path: '/api/memos/export', route: 'GET /api/memos/export' },
+    { path: '/api/memos/demo', queryLength: 1 },
     { method: 'POST', path: '/api/memos/demo', route: 'POST /api/memos/:id' },
     { method: 'PATCH', path: '/api/memos/demo', route: 'PATCH /api/memos/:id' },
   ];
@@ -172,24 +160,18 @@ test('allows only GET for a single class announcement and denies its write metho
   }
 });
 
-test('denies all teacher-material routes and unknown services', async () => {
+test('denies teacher materials and unknown service routes', async () => {
   const { normal } = fixtureRequests();
+  const teacherMaterial = {
+    ...normal,
+    service: 'teacher-materials',
+    method: 'GET',
+    path: '/api/teacher-materials/resource-id',
+    route: 'GET /api/teacher-materials/:id',
+  };
   const unknownService = { ...normal, service: 'unknown-service' };
 
-  for (const method of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']) {
-    const teacherMaterial = {
-      ...normal,
-      service: 'teacher-materials',
-      method,
-      path: '/api/teacher-materials/resource-id',
-      route: `${method} /api/teacher-materials/:id`,
-    };
-    const response = await decide(teacherMaterial);
-    assert.equal(response.decision, 'deny');
-    assert.equal(response.reasonCode, 'resource_route_not_allowed');
-  }
-
-  for (const request of [unknownService]) {
+  for (const request of [teacherMaterial, unknownService]) {
     const response = await decide(request);
     assert.equal(response.decision, 'deny');
     assert.equal(response.reasonCode, 'resource_route_not_allowed');

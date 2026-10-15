@@ -1,5 +1,3 @@
-import { RESOURCE_IDS } from './resource-id.mjs';
-
 // Checks what a visitor without credentials can read from the public app.
 // Never include note bodies, tokens, or private keys in the result.
 export async function runAttackChecks(config) {
@@ -28,7 +26,6 @@ export async function runAttackChecks(config) {
 
   const response = await fetch(new URL('/api/notes', app), {
     redirect: 'error',
-    headers: { 'X-Resource-ID': RESOURCE_IDS.instructorAnnouncements },
     signal: AbortSignal.timeout(10000),
   });
 

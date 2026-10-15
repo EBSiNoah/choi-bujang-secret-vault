@@ -1,5 +1,4 @@
 import { readFileSync } from 'node:fs';
-import { requireResourceId, RESOURCE_IDS } from '../src/resource-id.mjs';
 import { createLoginVerifier } from '../src/verify-login.mjs';
 
 const config = JSON.parse(
@@ -18,7 +17,6 @@ function getVerifier() {
 
 export default async function handler(request, response) {
   response.setHeader('Cache-Control', 'no-store');
-  if (!requireResourceId(request, response, RESOURCE_IDS.instructorAnnouncements)) return;
 
   if (request.method !== 'GET') {
     response.setHeader('Allow', 'GET');
@@ -37,7 +35,7 @@ export default async function handler(request, response) {
     const base = new URL(supabaseUrl);
     if (base.protocol !== 'https:') throw new Error();
     endpoint = new URL('/rest/v1/training_notes', base);
-    endpoint.searchParams.set('select', 'owner_id,title,content');
+    endpoint.searchParams.set('select', 'title,content');
     endpoint.searchParams.set('owner_id', 'is.null');
     endpoint.searchParams.set('order', 'id.asc');
   } catch {
@@ -75,8 +73,7 @@ export default async function handler(request, response) {
 
     const rows = await upstream.json();
     if (!Array.isArray(rows) ||
-        rows.some(row => row.owner_id !== null ||
-                         typeof row.title !== 'string' ||
+        rows.some(row => typeof row.title !== 'string' ||
                          typeof row.content !== 'string')) {
       return response.status(502).json({ error: 'INVALID_NOTES_RESPONSE' });
     }
