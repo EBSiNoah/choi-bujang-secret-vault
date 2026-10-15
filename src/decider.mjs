@@ -1,3 +1,5 @@
+import config from '../aleph.config.json' with { type: 'json' };
+
 // ALEPH SDP 엔진이 확인한 요청에 경로·기기·추가 확인 규칙을 적용합니다.
 // 요청 본문의 userId, role, 기기 키, 토큰을 별도로 믿거나 저장하지 마세요.
 export const RULE_IDS = Object.freeze([
@@ -53,16 +55,14 @@ function isSingleResourcePath(path, collectionPath) {
 function isAllowedResourceRoute(request) {
   if (request.queryLength !== 0) return false;
 
-  if (request.service === 'memos'
-      && request.method === 'GET'
-      && request.route === 'GET /memos/:id') {
-    return isSingleResourcePath(request.path, '/api/memos');
-  }
+  return config.allowedRoutes.some(({ method, path }) => {
+    const match = /^\/api\/(memos|notes)\/:id$/u.exec(path);
+    if (!match || request.service !== match[1] || request.method !== method) return false;
 
-  return request.service === 'notes'
-    && request.method === 'GET'
-    && request.route === 'GET /notes/:id'
-    && isSingleResourcePath(request.path, '/api/notes');
+    const routePath = path.slice('/api'.length);
+    return request.route === `${method} ${routePath}`
+      && isSingleResourcePath(request.path, `/api/${match[1]}`);
+  });
 }
 
 function isValidRequest(request) {
