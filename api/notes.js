@@ -37,7 +37,7 @@ export default async function handler(request, response) {
     const base = new URL(supabaseUrl);
     if (base.protocol !== 'https:') throw new Error();
     endpoint = new URL('/rest/v1/training_notes', base);
-    endpoint.searchParams.set('select', 'title,content');
+    endpoint.searchParams.set('select', 'id,owner_id,title,content');
     endpoint.searchParams.set('owner_id', 'is.null');
     endpoint.searchParams.set('order', 'id.asc');
   } catch {
@@ -75,7 +75,8 @@ export default async function handler(request, response) {
 
     const rows = await upstream.json();
     if (!Array.isArray(rows) ||
-        rows.some(row => typeof row.title !== 'string' ||
+        rows.some(row => !row || row.owner_id !== null ||
+                         typeof row.title !== 'string' ||
                          typeof row.content !== 'string')) {
       return response.status(502).json({ error: 'INVALID_NOTES_RESPONSE' });
     }

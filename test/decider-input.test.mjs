@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import config from '../aleph.config.json' with { type: 'json' };
 import { decide } from '../src/decider.mjs';
 import { fixtureRequests } from '../scripts/fixture-7.mjs';
 
@@ -92,6 +93,15 @@ test('allows one memo ID without restricting its format and keeps the memo metho
       route: `${method} /api/memos/:id`,
     })).decision, 'allow');
   }
+});
+
+test('configures only routes allowed by the resource policy', () => {
+  assert.deepEqual(config.allowedRoutes, [
+    { method: 'GET', path: '/api/notes/:id' },
+    { method: 'GET', path: '/api/memos/:id' },
+    { method: 'PUT', path: '/api/memos/:id' },
+    { method: 'DELETE', path: '/api/memos/:id' },
+  ]);
 });
 
 test('allows a class announcement only through the notes service and exact single-ID route', async () => {
