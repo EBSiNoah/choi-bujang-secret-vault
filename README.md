@@ -81,7 +81,7 @@ URL·본문의 `userId`, `role`, `owner_id`는 믿지 않습니다.
 `GET /api/memos/:id`	`200 {id,title,body}`	`404`	`401`
 `PUT /api/memos/:id`	`200 {id,title,body}`	`404` (`owner_id` 포함 시 `403`)	`401`
 `DELETE /api/memos/:id`	`204`	`404`	`401`
-`aleph.config.json`의 `allowedRoutes`는 위 메서드와 경로 그대로입니다. (`GET /api/notes`, `GET·POST /api/memos`, `GET·PUT·DELETE /api/memos/:id`)
+`aleph.config.json`의 `allowedRoutes`는 API 전체가 아니라 현재 판정기가 허용하는 경로만 적습니다. 8단계에서는 `GET /api/notes/:id`와 `GET /api/memos/:id`입니다. 전체 목록·생성 및 메모 수정·삭제 API는 서버에 있어도 판정기 경로 정책에서는 허용하지 않습니다.
 다시 확인하는 방법
 A 계정으로 배포 주소에 로그인합니다. 브라우저에서 `F12`를 눌러 Console을 엽니다.
 B 계정 소유의 시험 메모 id(`00000000-0000-4000-8000-00000000b001`)로 `GET`·`PUT`·`DELETE`를 보냅니다. 거부되어야 합니다. (`404`)
@@ -125,7 +125,7 @@ Vercel 환경변수 (서버 전용)	쓰임
 판정기 허용 경로(메서드와 경로)
 - `GET /api/notes/:id`: 반 공지 한 건 읽기
 - `GET /api/memos/:id`: 메모 한 건 읽기. 소유자 비교는 제작 3 API에서 수행
-- `PUT /api/memos/:id`, `DELETE /api/memos/:id`: 메모 한 건 수정·삭제
+- 메모 목록·생성·수정·삭제 API는 구현되어 있지만, 현재 판정기의 허용 경로에는 포함되지 않습니다.
 
 메모 전체 목록·생성 경로, 반 공지 쓰기, 강사 자료 및 알 수 없는 경로는 판정기에서 거부합니다. 강사 공지 수정은 역할 검사를 하는 서버 관리 경로의 책임입니다. 자세한 계약은 `docs/DECIDER_REQUEST.md`의 자료 구역 경로 정책을 따릅니다.
 

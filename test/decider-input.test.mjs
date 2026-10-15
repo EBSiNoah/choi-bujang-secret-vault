@@ -81,26 +81,28 @@ test('allows the suspicious fixture after a verified step-up', async () => {
   assert.equal((await decide(verified)).decision, 'allow');
 });
 
-test('allows one memo ID without restricting its format and keeps the memo methods', async () => {
+test('allows only a single memo GET matching the configured API path', async () => {
   const { normal } = fixtureRequests();
   const request = { ...normal, path: '/api/memos/not-a-uuid' };
 
   assert.equal((await decide(request)).decision, 'allow');
-  for (const method of ['PUT', 'DELETE']) {
-    assert.equal((await decide({
+  for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
+    const result = await decide({
       ...request,
       method,
       route: `${method} /memos/:id`,
-    })).decision, 'allow');
+    });
+    assert.equal(result.decision, 'deny');
+    assert.equal(result.reasonCode, 'resource_route_not_allowed');
   }
+  const wrongShape = await decide({ ...request, path: '/api/memos/a/b' });
+  assert.equal(wrongShape.decision, 'deny');
 });
 
 test('configures only routes allowed by the resource policy', () => {
   assert.deepEqual(config.allowedRoutes, [
     { method: 'GET', path: '/api/notes/:id' },
     { method: 'GET', path: '/api/memos/:id' },
-    { method: 'PUT', path: '/api/memos/:id' },
-    { method: 'DELETE', path: '/api/memos/:id' },
   ]);
 });
 
@@ -138,6 +140,8 @@ test('denies memo collections, nested feature routes, wrong route shapes, and qu
     { path: '/api/memos/demo', queryLength: 1 },
     { method: 'POST', path: '/api/memos/demo', route: 'POST /memos/:id' },
     { method: 'PATCH', path: '/api/memos/demo', route: 'PATCH /memos/:id' },
+    { route: 'GET /api/memos/:id' },
+    { service: 'notes', route: 'GET /memos/:id' },
   ];
 
   for (const change of invalidRoutes) {

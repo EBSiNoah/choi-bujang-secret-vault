@@ -17,14 +17,6 @@
     {
       "method": "GET",
       "path": "/api/memos/:id"
-    },
-    {
-      "method": "PUT",
-      "path": "/api/memos/:id"
-    },
-    {
-      "method": "DELETE",
-      "path": "/api/memos/:id"
     }
   ],
   "originalApiUrl": "https://lcvrjogmyryihpkdpidf.supabase.co/rest/v1/memos",

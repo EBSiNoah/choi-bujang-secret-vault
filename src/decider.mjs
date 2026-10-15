@@ -54,8 +54,8 @@ function isAllowedResourceRoute(request) {
   if (request.queryLength !== 0) return false;
 
   if (request.service === 'memos'
-      && ['GET', 'PUT', 'DELETE'].includes(request.method)
-      && request.route === `${request.method} /memos/:id`) {
+      && request.method === 'GET'
+      && request.route === 'GET /memos/:id') {
     return isSingleResourcePath(request.path, '/api/memos');
   }
 
