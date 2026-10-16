@@ -20,7 +20,6 @@
   "originalApiUrl": "https://lcvrjogmyryihpkdpidf.supabase.co/rest/v1/memos",
   "restoreRoute": [
     { "method": "POST", "path": "/api/policies/restore" },
-    { "method": "POST", "path": "/api/notes/restore" },
     { "method": "POST", "path": "/api/memos/restore" }
   ]
 }
