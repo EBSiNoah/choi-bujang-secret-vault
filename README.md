@@ -130,6 +130,7 @@ API 구현 경로 전체와 판정기 허용 경로는 다릅니다. `allowedRou
 `PUT /api/memos/:id`	`{title,body}` → `{id,title,body}`, 남의 메모 `404`, `owner_id` 포함 시 `403`	`401`
 `DELETE /api/memos/:id`	`204`, 남의 메모는 `404`	`401`
 `POST /api/memos/restore`	시험 계정 B의 지정 메모 한 건을 검증된 사본으로 복원 → `{id,owner_id,contentSha256}`	`401`
+`POST /api/policies/restore`	시험 정책 사본 미리보기 및 확인 후 지정 범위 복원	`401`
 
 메모 복원 서비스·경로
 - 서비스: `personal-memos-v1`; 경로: `POST /api/memos/restore`.
@@ -137,6 +138,13 @@ API 구현 경로 전체와 판정기 허용 경로는 다릅니다. `allowedRou
 - 서버가 같은 ID·소유자의 현재 행을 조회한 뒤 그 행의 `title`, `body`만 갱신하고, 반환된 ID·소유자·내용 해시를 다시 검사합니다. 다른 메모는 갱신하지 않으며 감사 이력을 쓰거나 수정하지 않습니다. 사본 내용은 오류 응답이나 로그에 포함하지 않습니다.
 - 정상은 `200`과 사본의 ID·소유자·내용 해시입니다. 누락·불일치 사본은 `400`, 해당 소유자의 시험 메모가 없으면 `404`, 서비스 오류나 갱신 결과 검증 실패는 `502`입니다. 이 API는 사본의 발급 출처를 서명으로 증명하지 않고, 로그인한 소유자에게 제한된 시험 복원 및 해시 일치만 확인합니다.
 - 로컬 재실행: 저장소 루트 터미널에서 `node --test test/memo-restore.test.mjs` 실행. 가짜 인증·DB로 시험 계정 B의 고정 시험 메모만 복원하고, 다른 메모와 감사 이력이 그대로인지 확인합니다. 실제 계정·DB·배포에서 실행한 결과는 아닙니다.
+
+정책 복원 서비스·경로
+- 서비스: `test-policy-restore-v1`; 경로: `POST /api/policies/restore`. [`aleph.config.json`](./aleph.config.json)의 `restoreRoute`는 이 정책 복원 경로만 가리킵니다. 기존 `POST /api/memos/restore`는 메모 단건 복원 용도로 유지되며 정책 경로 설정을 대체하지 않습니다.
+- Supabase의 `test_policy_snapshots`와 `test_policy_state`는 정책 시험 전용 저장소입니다. 스키마는 [`supabase/migrations/20261016000100_create_test_policy_restore.sql`](./supabase/migrations/20261016000100_create_test_policy_restore.sql)에 있고, 서버는 `test_policy_state`의 `singleton` 행만 갱신합니다. 이 테이블은 운영 판정기 정책과 별도이며, 운영 정책을 바꾸지 않습니다. 복구를 사용하려면 관리자가 시험 정책 singleton과 침해 전 사본을 별도 준비해야 합니다. 사본이 없으면 `404`로 중단합니다.
+- 사본 서명은 서버 전용 `POLICY_SNAPSHOT_HMAC_KEY` 환경 변수(최소 32 UTF-8 바이트)로 검증합니다. 이 값은 공식 호스팅 환경의 비밀 입력란에 직접 설정하고 코드·Git·요청·로그에 넣지 않습니다. 사본의 서명은 HMAC-SHA256이며, 서명 대상은 canonical JSON의 `{version,createdAt,intrusionAt,policy}`입니다. 시각은 UTC ISO 형식이며 저장 후 밀리초 단위 UTC ISO로 정규화해 서명합니다. 확인 요청 때 저장소에서 사본을 다시 읽고 서명을 다시 검증합니다. 사본 생성·서명 작업은 이 API에 포함되지 않으며, 사전 침해 시점에 신뢰된 관리 절차로 준비되어야 합니다.
+- 호출은 인증된 POST, 허용된 `POLICY_RESTORE_OPERATOR_ID` 계정, `X-Resource-ID: test-policy-restore-v1`을 요구합니다. `POLICY_RESTORE_OPERATOR_ID`는 공식 호스팅 설정에 복원 권한이 있는 시험 운영자의 인증 사용자 UUID로 지정합니다. 먼저 `{action:"preview",version,restorePaths}`를 POST하면 사본 버전·변경 경로·전후 차이와 5분 유효 확인 토큰을 반환합니다. 변경 범위와 버전을 검토한 뒤에만 `{action:"confirm",confirmationToken}`을 별도 POST합니다. 확인 단계에서도 사본을 다시 읽고 검증하며, 미리보기 뒤 정책이 변경됐으면 거부합니다. 시험 정책 revision 조건부 갱신으로 동시 변경을 덮어쓰지 않습니다. `services`, `serviceRules`/`service_rules`, `audit`, `auditHistory`/`audit_history`, `auditLog`/`audit_log` 경로는 복원 범위에서 거부하며 다른 시험 정책 필드와 기존 감사 기록은 보존합니다.
+- 경로·범위 오류는 `400`, 사본 검증 실패나 미리보기 만료/변경은 `409`, 사본 없음은 `404`, 시험 저장소 장애는 `502`입니다. 로컬 가짜 DB 확인은 `node --test test/policy-restore.test.mjs test/policy-restore-api.test.mjs`로 실행합니다. 실제 Supabase migration 적용, 시험 데이터 준비, 키 설정, 배포 호출은 이 문서 수정 중 실행하지 않았으므로 **미실행**입니다.
 
 확인 상태
 확인함 (로컬, 가짜 DB·가짜 인증 서버): 4단계 A/B 시나리오 13개, `deployment-identity.mjs` 검사 8개와 `allowedRoutes` 7개, `api/login.js` 7개가 모두 통과했습니다. 화면 코드에 `sb_publishable`, `eyJ`, `supabase` 문자열이 남아 있지 않은 것도 확인했습니다.
@@ -183,7 +191,7 @@ npm run decider:test
 
 ### 0. 복구 결과 확인 — 이후 시험의 선행 조건
 
-1. 복원 직전에 침해 전 안전 정책 사본을 저장소에서 다시 읽고 서명·무결성 검증을 수행합니다. 사본이 없거나 검증에 실패하면 현재 정책을 읽거나 복원하지 말고 즉시 중단합니다. 검증 성공 후 복원할 사본의 버전과 변경될 경로·항목 범위를 실행 전에 미리보기로 표시하고, 확인·승인을 받은 경우에만 시험 정책에 적용합니다. 복원 대상으로 고르지 않은 서비스 규칙과 감사 이력은 보존됐는지 대조합니다. 현재 `src/policy-restore.mjs`는 `environment: "test"` 저장소와 검증·미리보기·승인 콜백을 받는 호출 모듈일 뿐 운영 정책 연결이나 화면 경로가 없습니다. 실제 시험 정책 어댑터와 사본 검증기가 준비되지 않았다면 복원을 시도하지 말고 중단합니다.
+1. 복원 직전에 침해 전 안전 정책 사본을 저장소에서 다시 읽고 서명·무결성 검증을 수행합니다. 사본이 없거나 검증에 실패하면 현재 정책을 읽거나 복원하지 말고 즉시 중단합니다. 검증 성공 후 복원할 사본의 버전과 변경될 경로·항목 범위를 실행 전에 미리보기로 표시하고, 확인·승인을 받은 경우에만 시험 정책에 적용합니다. 복원 대상으로 고르지 않은 서비스 규칙과 감사 이력은 보존됐는지 대조합니다. 정책 API는 `test_policy_state` 시험 테이블에만 연결되며 운영 판정기 정책을 바꾸지 않습니다. 브라우저 버튼은 없고 API의 미리보기 응답을 확인한 뒤 별도의 확인 요청을 보내야 합니다. Migration, 사전 사본, HMAC 키, 허용 운영자 ID가 준비되지 않았다면 호출하지 말고 중단합니다.
 2. 시험 계정 B로 로그인한 상태에서 `personal-memos-v1`의 `POST /api/memos/restore`를 호출합니다. 사본은 지정된 B 시험 메모 ID, 로그인한 B의 `owner_id`, `title`, `body`, `contentSha256`을 포함해야 합니다. 본문 해시는 UTF-8 `JSON.stringify({title,body})`의 SHA-256 값입니다. API가 반환한 ID·소유자·해시가 사본과 모두 같을 때만 복구 대상 한 건의 확인을 기록합니다. 응답이 `400`, `404`, `502`이거나 값이 다르면 멈추고, 다른 계정/메모를 대상으로 재시도하지 않습니다. 이 경로는 사본 발급자의 서명을 확인하지 않으므로, 자체 내용 해시만으로 사본 출처까지 검증됐다고 간주하지 않습니다.
 3. 복구가 확인된 후 아래 순서대로 정상 요청과 금지 요청을 각각 실행합니다. 상태 코드는 현재 API 계약이 정한 기대값이며, 실제 배포 응답과 일치한 경우에만 결과를 기록합니다.
 

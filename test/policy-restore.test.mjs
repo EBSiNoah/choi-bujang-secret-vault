@@ -129,6 +129,7 @@ test("requires explicit non-overlapping restore paths and protects service and a
     undefined,
     ["/"],
     ["/services/notices"],
+    ["/resourceAccess/audit_history"],
     ["/auditHistory"],
     ["/resourceAccess", "/resourceAccess/memos"],
   ]) {

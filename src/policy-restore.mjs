@@ -56,10 +56,14 @@ function selectedPaths(paths) {
   if (!Array.isArray(paths) || paths.length === 0) {
     throw new TypeError("restorePaths must explicitly list the policy paths to restore.");
   }
-  const protectedRoots = new Set(["services", "serviceRules", "audit", "auditHistory", "auditLog"]);
+  if (paths.length > 40) throw new TypeError("restorePaths must contain no more than 40 paths.");
+  const protectedRoots = new Set([
+    "services", "servicerules", "service_rules",
+    "audit", "audithistory", "audit_history", "auditlog", "audit_log",
+  ]);
   const parsed = paths.map((path) => ({ path, parts: parsePointer(path) }));
   for (const { path, parts } of parsed) {
-    if (parts.some((part) => protectedRoots.has(part))) {
+    if (parts.some((part) => protectedRoots.has(part.toLowerCase()))) {
       throw new TypeError(`Policy path is protected from restore: ${path}`);
     }
   }
@@ -72,6 +76,110 @@ function selectedPaths(paths) {
     }
   }
   return parsed;
+}
+
+function validateRestoreOptions({ verifySnapshot, testPolicy, presentPreview, confirmRestore }) {
+  if (typeof verifySnapshot !== "function") throw new TypeError("verifySnapshot(snapshot) is required.");
+  if (!testPolicy || testPolicy.environment !== "test"
+    || typeof testPolicy.read !== "function" || typeof testPolicy.replace !== "function") {
+    throw new TypeError("A test-only policy store with read() and replace(policy) is required.");
+  }
+  if (presentPreview !== undefined && typeof presentPreview !== "function") {
+    throw new TypeError("presentPreview(preview) must be a function.");
+  }
+  if (confirmRestore !== undefined && typeof confirmRestore !== "function") {
+    throw new TypeError("confirmRestore(preview) must be a function.");
+  }
+}
+
+function validateSnapshot(snapshot, intrusionAt) {
+  const saved = cloneJson(snapshot, "snapshot");
+  if (!isRecord(saved) || typeof saved.version !== "string" || !saved.version.trim()
+    || typeof saved.createdAt !== "string" || !isRecord(saved.policy)) {
+    throw new TypeError("Snapshot must include a version, createdAt, and policy object.");
+  }
+  const snapshotTime = Date.parse(saved.createdAt);
+  const incidentTime = Date.parse(intrusionAt);
+  if (!Number.isFinite(snapshotTime) || !Number.isFinite(incidentTime) || snapshotTime >= incidentTime) {
+    throw new Error("The policy copy must have a valid timestamp before the intrusion.");
+  }
+  return saved;
+}
+
+async function verifySavedSnapshot(saved, verifySnapshot, errorMessage) {
+  if (await verifySnapshot(cloneJson(saved, "snapshot for verification")) !== true) {
+    throw new Error(errorMessage);
+  }
+}
+
+export async function prepareTestPolicyRestore({
+  snapshot,
+  intrusionAt,
+  verifySnapshot,
+  testPolicy,
+  restorePaths,
+}) {
+  validateRestoreOptions({ verifySnapshot, testPolicy });
+  const pathsToRestore = selectedPaths(restorePaths);
+  const saved = validateSnapshot(snapshot, intrusionAt);
+  await verifySavedSnapshot(
+    saved,
+    verifySnapshot,
+    "The pre-incident policy copy could not be verified; restore stopped.",
+  );
+
+  const current = cloneJson(await testPolicy.read(), "current test policy");
+  if (!isRecord(current)) throw new TypeError("Current test policy must be a JSON object.");
+
+  const changes = [];
+  for (const { parts } of pathsToRestore) {
+    const before = getAtPath(current, parts);
+    const after = getAtPath(saved.policy, parts);
+    if (!before.exists && after.exists) {
+      changes.push({ path: pointer(parts), operation: "add", after: cloneJson(after.value, "policy value") });
+    } else if (before.exists && !after.exists) {
+      changes.push({ path: pointer(parts), operation: "remove", before: cloneJson(before.value, "policy value") });
+    } else if (before.exists && after.exists) {
+      changes.push(...diffPolicies(before.value, after.value, parts));
+    }
+  }
+  const preview = deepFreeze({
+    version: saved.version,
+    createdAt: saved.createdAt,
+    scope: changes.map(({ path }) => path),
+    changes,
+  });
+
+  const restored = cloneJson(current, "current test policy");
+  for (const { parts } of pathsToRestore) {
+    setAtPath(restored, parts, getAtPath(saved.policy, parts));
+  }
+  return Object.freeze({
+    preview,
+    saved: deepFreeze(saved),
+    originalPolicy: deepFreeze(current),
+    restoredPolicy: deepFreeze(restored),
+  });
+}
+
+export async function applyTestPolicyRestore({ plan, verifySnapshot, testPolicy }) {
+  if (!plan || !isRecord(plan.saved) || !isRecord(plan.originalPolicy)
+    || !isRecord(plan.restoredPolicy)) {
+    throw new TypeError("A prepared test policy restore plan is required.");
+  }
+  validateRestoreOptions({ verifySnapshot, testPolicy });
+  await verifySavedSnapshot(
+    plan.saved,
+    verifySnapshot,
+    "The pre-incident policy copy failed re-verification; restore stopped.",
+  );
+
+  const latest = cloneJson(await testPolicy.read(), "current test policy");
+  if (!isDeepStrictEqual(latest, plan.originalPolicy)) {
+    throw new Error("The test policy changed after preview; review a fresh preview before restoring.");
+  }
+
+  await testPolicy.replace(cloneJson(plan.restoredPolicy, "restored test policy"));
 }
 
 function diffPolicies(current, target, path = []) {
@@ -128,71 +236,14 @@ export async function restoreTestPolicy({
   presentPreview,
   confirmRestore,
 }) {
-  if (typeof verifySnapshot !== "function") throw new TypeError("verifySnapshot(snapshot) is required.");
-  if (!testPolicy || testPolicy.environment !== "test"
-    || typeof testPolicy.read !== "function" || typeof testPolicy.replace !== "function") {
-    throw new TypeError("A test-only policy store with read() and replace(policy) is required.");
-  }
-  if (typeof presentPreview !== "function" || typeof confirmRestore !== "function") {
-    throw new TypeError("presentPreview(preview) and confirmRestore(preview) are required.");
-  }
-  const pathsToRestore = selectedPaths(restorePaths);
-
-  const saved = cloneJson(snapshot, "snapshot");
-  if (!isRecord(saved) || typeof saved.version !== "string" || !saved.version.trim()
-    || typeof saved.createdAt !== "string" || !isRecord(saved.policy)) {
-    throw new TypeError("Snapshot must include a version, createdAt, and policy object.");
-  }
-  const snapshotTime = Date.parse(saved.createdAt);
-  const incidentTime = Date.parse(intrusionAt);
-  if (!Number.isFinite(snapshotTime) || !Number.isFinite(incidentTime) || snapshotTime >= incidentTime) {
-    throw new Error("The policy copy must have a valid timestamp before the intrusion.");
-  }
-
-  const isVerified = () => verifySnapshot(cloneJson(saved, "snapshot for verification"));
-  if (await isVerified() !== true) {
-    throw new Error("The pre-incident policy copy could not be verified; restore stopped.");
-  }
-
-  const current = cloneJson(await testPolicy.read(), "current test policy");
-  if (!isRecord(current)) throw new TypeError("Current test policy must be a JSON object.");
-
-  const changes = [];
-  for (const { parts } of pathsToRestore) {
-    const before = getAtPath(current, parts);
-    const after = getAtPath(saved.policy, parts);
-    if (!before.exists && after.exists) {
-      changes.push({ path: pointer(parts), operation: "add", after: cloneJson(after.value, "policy value") });
-    } else if (before.exists && !after.exists) {
-      changes.push({ path: pointer(parts), operation: "remove", before: cloneJson(before.value, "policy value") });
-    } else if (before.exists && after.exists) {
-      changes.push(...diffPolicies(before.value, after.value, parts));
-    }
-  }
-  const preview = deepFreeze({
-    version: saved.version,
-    createdAt: saved.createdAt,
-    scope: changes.map(({ path }) => path),
-    changes,
+  validateRestoreOptions({ verifySnapshot, testPolicy, presentPreview, confirmRestore });
+  const plan = await prepareTestPolicyRestore({
+    snapshot, intrusionAt, verifySnapshot, testPolicy, restorePaths,
   });
-
-  await presentPreview(preview);
-  if (changes.length === 0) return { applied: false, preview };
-  if (await confirmRestore(preview) !== true) return { applied: false, preview };
-
-  if (await isVerified() !== true) {
-    throw new Error("The pre-incident policy copy failed re-verification; restore stopped.");
+  await presentPreview(plan.preview);
+  if (plan.preview.changes.length === 0 || await confirmRestore(plan.preview) !== true) {
+    return { applied: false, preview: plan.preview };
   }
-
-  const latest = cloneJson(await testPolicy.read(), "current test policy");
-  if (!isDeepStrictEqual(latest, current)) {
-    throw new Error("The test policy changed after preview; review a fresh preview before restoring.");
-  }
-
-  const restored = cloneJson(current, "current test policy");
-  for (const { parts } of pathsToRestore) {
-    setAtPath(restored, parts, getAtPath(saved.policy, parts));
-  }
-  await testPolicy.replace(restored);
-  return { applied: true, preview };
+  await applyTestPolicyRestore({ plan, verifySnapshot, testPolicy });
+  return { applied: true, preview: plan.preview };
 }
