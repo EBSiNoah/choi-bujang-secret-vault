@@ -25,6 +25,14 @@
     {
       "method": "GET",
       "path": "/api/notes/:id"
+    },
+    {
+      "method": "GET",
+      "path": "/notes/:id"
+    },
+    {
+      "method": "GET",
+      "path": "/memos/:id"
     }
   ],
   "originalApiUrl": "https://lcvrjogmyryihpkdpidf.supabase.co/rest/v1/memos",
