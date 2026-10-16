@@ -131,6 +131,8 @@ API 구현 경로 전체와 판정기 허용 경로는 다릅니다. `allowedRou
 `DELETE /api/memos/:id`	`204`, 남의 메모는 `404`	`401`
 `POST /api/memos/restore`	시험 계정 B의 지정 메모 한 건을 검증된 사본으로 복원 → `{id,owner_id,contentSha256}`	`401`
 `POST /api/policies/restore`	시험 정책 사본 미리보기 및 확인 후 지정 범위 복원	`401`
+`POST /api/notes/:id/restore`	`restoreRoute` 설정에만 있음; API 구현·시험 미확인	미실행
+`POST /api/memos/:id/restore`	`restoreRoute` 설정에만 있음; 현재 메모 복원 구현은 `/api/memos/restore`	미실행
 
 메모 복원 서비스·경로
 - 서비스: `personal-memos-v1`; 경로: `POST /api/memos/restore`.
@@ -140,7 +142,7 @@ API 구현 경로 전체와 판정기 허용 경로는 다릅니다. `allowedRou
 - 로컬 재실행: 저장소 루트 터미널에서 `node --test test/memo-restore.test.mjs` 실행. 가짜 인증·DB로 시험 계정 B의 고정 시험 메모만 복원하고, 다른 메모와 감사 이력이 그대로인지 확인합니다. 실제 계정·DB·배포에서 실행한 결과는 아닙니다.
 
 정책 복원 서비스·경로
-- 서비스: `test-policy-restore-v1`; 경로: `POST /api/policies/restore`. [`aleph.config.json`](./aleph.config.json)의 `restoreRoute`는 이 정책 복원 경로만 가리킵니다. 기존 `POST /api/memos/restore`는 메모 단건 복원 용도로 유지되며 정책 경로 설정을 대체하지 않습니다.
+- 서비스: `test-policy-restore-v1`; 경로: `POST /api/policies/restore`. 현재 [`aleph.config.json`](./aleph.config.json)의 `restoreRoute`에는 이 경로와 `POST /api/notes/:id/restore`, `POST /api/memos/:id/restore`가 함께 선언돼 있습니다. 이는 설정에 기재된 경로 목록이며, 뒤의 두 경로는 현재 API 구현·시험이 확인되지 않아 사용 가능한 경로로 간주하지 않습니다. 메모 복원은 별도의 기존 `POST /api/memos/restore` 경로이며, 설정의 `/api/memos/:id/restore`와 서로 다릅니다.
 - Supabase의 `test_policy_snapshots`와 `test_policy_state`는 정책 시험 전용 저장소입니다. 스키마는 [`supabase/migrations/20261016000100_create_test_policy_restore.sql`](./supabase/migrations/20261016000100_create_test_policy_restore.sql)에 있고, 서버는 `test_policy_state`의 `singleton` 행만 갱신합니다. 이 테이블은 운영 판정기 정책과 별도이며, 운영 정책을 바꾸지 않습니다. 복구를 사용하려면 관리자가 시험 정책 singleton과 침해 전 사본을 별도 준비해야 합니다. 사본이 없으면 `404`로 중단합니다.
 - 사본 서명은 서버 전용 `POLICY_SNAPSHOT_HMAC_KEY` 환경 변수(최소 32 UTF-8 바이트)로 검증합니다. 이 값은 공식 호스팅 환경의 비밀 입력란에 직접 설정하고 코드·Git·요청·로그에 넣지 않습니다. 사본의 서명은 HMAC-SHA256이며, 서명 대상은 canonical JSON의 `{version,createdAt,intrusionAt,policy}`입니다. 시각은 UTC ISO 형식이며 저장 후 밀리초 단위 UTC ISO로 정규화해 서명합니다. 확인 요청 때 저장소에서 사본을 다시 읽고 서명을 다시 검증합니다. 사본 생성·서명 작업은 이 API에 포함되지 않으며, 사전 침해 시점에 신뢰된 관리 절차로 준비되어야 합니다.
 - 호출은 인증된 POST, 허용된 `POLICY_RESTORE_OPERATOR_ID` 계정, `X-Resource-ID: test-policy-restore-v1`을 요구합니다. `POLICY_RESTORE_OPERATOR_ID`는 공식 호스팅 설정에 복원 권한이 있는 시험 운영자의 인증 사용자 UUID로 지정합니다. 먼저 `{action:"preview",version,restorePaths}`를 POST하면 사본 버전·변경 경로·전후 차이와 5분 유효 확인 토큰을 반환합니다. 변경 범위와 버전을 검토한 뒤에만 `{action:"confirm",confirmationToken}`을 별도 POST합니다. 확인 단계에서도 사본을 다시 읽고 검증하며, 미리보기 뒤 정책이 변경됐으면 거부합니다. 시험 정책 revision 조건부 갱신으로 동시 변경을 덮어쓰지 않습니다. `services`, `serviceRules`/`service_rules`, `audit`, `auditHistory`/`audit_history`, `auditLog`/`audit_log` 경로는 복원 범위에서 거부하며 다른 시험 정책 필드와 기존 감사 기록은 보존합니다.
