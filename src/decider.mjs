@@ -59,16 +59,17 @@ function isAllowedResourceRoute(request) {
   if (request.queryLength !== 0) return false;
 
   return config.allowedRoutes.some(({ method, path }) => {
-    if (path === '/api/notes') {
+    if (path === '/api/class/notices') {
       return method === 'GET'
         && request.service === 'notes'
         && request.method === method
         && request.path === path
-        && request.route === `${method} /notes`;
+        && request.route === `${method} /class/notices`;
     }
 
-    const match = /^\/api\/(memos|notes)\/:id$/u.exec(path);
-    if (!match || request.service !== match[1] || request.method !== method) return false;
+    const match = /^\/api\/(memos|class\/notices)\/:id$/u.exec(path);
+    const service = match?.[1] === 'memos' ? 'memos' : 'notes';
+    if (!match || request.service !== service || request.method !== method) return false;
 
     const routePath = path.slice('/api'.length);
     return request.route === `${method} ${routePath}`

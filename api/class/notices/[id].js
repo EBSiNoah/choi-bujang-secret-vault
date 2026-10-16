@@ -1,6 +1,6 @@
-import { isUuid, memosContext } from '../../src/memos.mjs';
-import { isInstructor } from '../../src/instructors.mjs';
-import { requireResourceId, RESOURCE_IDS } from '../../src/resource-id.mjs';
+import { isUuid, memosContext } from '../../../src/memos.mjs';
+import { isInstructor } from '../../../src/instructors.mjs';
+import { requireResourceId, RESOURCE_IDS } from '../../../src/resource-id.mjs';
 
 function parseNote(body) {
   if (!body || typeof body !== 'object') return null;

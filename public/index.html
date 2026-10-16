@@ -111,7 +111,7 @@
     // 화면 코드에는 어떤 키도 들어 있지 않습니다. userId·role 도 보내지 않습니다.
     async function api(path, options = {}) {
       const token = sessionStorage.getItem(TOKEN_KEY);
-      const resourceId = path.startsWith('/api/notes')
+      const resourceId = path.startsWith('/api/class/notices')
         ? 'instructor-announcements-v1'
         : path.startsWith('/api/memos')
           ? 'personal-memos-v1'
@@ -141,7 +141,7 @@
       const list = $('notes');
       list.replaceChildren(msgItem('자료를 불러오는 중입니다.'));
       try {
-        const response = await api('/api/notes');
+        const response = await api('/api/class/notices');
         if (response.status === 401) return;
         if (!response.ok) throw new Error('자료를 불러오지 못했습니다.');
         const data = await response.json();

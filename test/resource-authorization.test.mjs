@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
-import notesHandler from '../api/notes.js';
-import noteHandler from '../api/notes/[id].js';
+import notesHandler from '../api/class/notices.js';
+import noteHandler from '../api/class/notices/[id].js';
 import memosHandler from '../api/memos/index.js';
 import memoHandler from '../api/memos/[id].js';
 import config from '../aleph.config.json' with { type: 'json' };
@@ -89,12 +89,14 @@ test('resource APIs enforce stored memo ownership and instructor membership', as
       return new Response(null, { status: 201 });
     } else if (url.pathname === '/rest/v1/training_notes'
         && url.searchParams.has('id')) {
-      body = [{
-        id: memoId,
-        owner_id: userId,
-        title: 'Private memo',
-        content: 'Must not be returned as a class notice',
-      }];
+      body = url.searchParams.get('id') === `eq.${noteId}`
+        ? [{ id: noteId, owner_id: null, title: 'Class notice', content: 'Single notice' }]
+        : [{
+          id: memoId,
+          owner_id: userId,
+          title: 'Private memo',
+          content: 'Must not be returned as a class notice',
+        }];
     } else if (url.pathname === '/rest/v1/training_notes'
         && init.method === 'PATCH') {
       noteWriteAttempted = true;
@@ -174,6 +176,19 @@ test('resource APIs enforce stored memo ownership and instructor membership', as
     assert.equal(notesResponse.statusCode, 200);
     assert.deepEqual(notesResponse.body, {
       notes: [{ title: 'Class notice', content: 'Public notice' }],
+    });
+
+    const singleNoteResponse = mockResponse();
+    await noteHandler({
+      method: 'GET',
+      headers: headers(RESOURCE_IDS.instructorAnnouncements),
+      query: { id: noteId },
+    }, singleNoteResponse);
+    assert.equal(singleNoteResponse.statusCode, 200);
+    assert.deepEqual(singleNoteResponse.body, {
+      id: noteId,
+      title: 'Class notice',
+      content: 'Single notice',
     });
 
     const privateNoteResponse = mockResponse();

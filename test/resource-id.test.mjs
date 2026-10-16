@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import notesHandler from '../api/notes.js';
-import noteHandler from '../api/notes/[id].js';
+import notesHandler from '../api/class/notices.js';
+import noteHandler from '../api/class/notices/[id].js';
 import memosHandler from '../api/memos/index.js';
 import memoHandler from '../api/memos/[id].js';
 import { RESOURCE_IDS } from '../src/resource-id.mjs';

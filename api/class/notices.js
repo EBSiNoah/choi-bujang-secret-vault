@@ -1,12 +1,11 @@
 import { readFileSync } from 'node:fs';
-import { createLoginVerifier } from '../src/verify-login.mjs';
-import { requireResourceId, RESOURCE_IDS } from '../src/resource-id.mjs';
+import { createLoginVerifier } from '../../src/verify-login.mjs';
+import { requireResourceId, RESOURCE_IDS } from '../../src/resource-id.mjs';
 
 const config = JSON.parse(
-  readFileSync(new URL('../aleph.config.json', import.meta.url), 'utf8'),
+  readFileSync(new URL('../../aleph.config.json', import.meta.url), 'utf8'),
 );
 
-// 서버 런타임에서 한 번만 만듭니다. 설정이 잘못되면 요청 때 500 으로 답합니다.
 let verifyLogin;
 function getVerifier() {
   verifyLogin ??= createLoginVerifier({
@@ -51,9 +50,6 @@ export default async function handler(request, response) {
     return response.status(500).json({ error: 'SERVER_CONFIGURATION_ERROR' });
   }
 
-  // 로그인 확인: Authorization 헤더의 토큰만 검사합니다.
-  // 요청의 userId·role 같은 값은 읽지 않습니다. 검사 결과(identity)만 믿습니다.
-  // 토큰이 없거나 검사에 실패하면 자료를 읽기 전에 거부합니다.
   const identity = await verify(request.headers.authorization);
   if (!identity) {
     return response.status(401).json({ error: 'LOGIN_REQUIRED' });
@@ -85,7 +81,6 @@ export default async function handler(request, response) {
       notes: rows.map(({ title, content }) => ({ title, content })),
     });
   } catch {
-    // 키나 Supabase 오류 내용을 응답·로그에 남기지 않습니다.
     return response.status(502).json({ error: 'NOTES_SERVICE_UNAVAILABLE' });
   }
 }

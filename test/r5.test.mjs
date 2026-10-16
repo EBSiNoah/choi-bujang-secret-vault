@@ -64,7 +64,7 @@ test('attack check reads the public notes API without credentials', async () => 
 
     assert.equal(
       requestUrl,
-      'https://student-defense.vercel.app/api/notes'
+      'https://student-defense.vercel.app/api/class/notices'
     );
     assert.equal(options.redirect, 'error');
     assert.deepEqual(options.headers, {

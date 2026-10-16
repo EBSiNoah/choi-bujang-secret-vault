@@ -12,11 +12,11 @@
   "allowedRoutes": [
     {
       "method": "GET",
-      "path": "/api/notes"
+      "path": "/api/class/notices"
     },
     {
       "method": "GET",
-      "path": "/api/notes/:id"
+      "path": "/api/class/notices/:id"
     },
     {
       "method": "GET",
