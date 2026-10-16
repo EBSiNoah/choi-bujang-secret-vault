@@ -72,8 +72,12 @@ function isAllowedResourceRoute(request) {
     if (!match || request.service !== service || request.method !== method) return false;
 
     const routePath = path.slice('/api'.length);
-    return request.route === `${method} ${routePath}`
+    const configuredResourceMatch = request.route === `${method} ${routePath}`
       && isSingleResourcePath(request.path, `/api/${match[1]}`);
+    const memoNotesAliasMatch = match[1] === 'memos'
+      && request.route === `${method} /notes/:id`
+      && isSingleResourcePath(request.path, '/notes');
+    return configuredResourceMatch || memoNotesAliasMatch;
   });
 }
 
