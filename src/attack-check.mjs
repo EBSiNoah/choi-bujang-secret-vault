@@ -1,5 +1,3 @@
-import { RESOURCE_IDS } from './resource-id.mjs';
-
 // Checks what a visitor without credentials can read from the public app.
 // Never include note bodies, tokens, or private keys in the result.
 export async function runAttackChecks(config) {
@@ -26,9 +24,8 @@ export async function runAttackChecks(config) {
     throw new Error('aleph.config.json의 실제 배포 주소를 먼저 넣어 주세요.');
   }
 
-  const response = await fetch(new URL('/api/class/notices', app), {
+  const response = await fetch(new URL('/api/notes', app), {
     redirect: 'error',
-    headers: { 'x-resource-id': RESOURCE_IDS.instructorAnnouncements },
     signal: AbortSignal.timeout(10000),
   });
 

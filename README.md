@@ -81,7 +81,7 @@ URL·본문의 `userId`, `role`, `owner_id`는 믿지 않습니다.
 `GET /api/memos/:id`	`200 {id,title,body}`	`404`	`401`
 `PUT /api/memos/:id`	`200 {id,title,body}`	`404` (`owner_id` 포함 시 `403`)	`401`
 `DELETE /api/memos/:id`	`204`	`404`	`401`
-`aleph.config.json`의 `allowedRoutes`는 API 전체가 아니라 현재 판정기가 허용하는 경로만 적습니다. 현재 `GET /api/class/notices`, `GET /api/class/notices/:id`, `GET /api/memos/:id`를 허용합니다. `/api/notes` 목록과 메모 목록·생성, 메모 수정·삭제 API는 서버에 있어도 판정기 경로 정책에서는 허용하지 않습니다.
+`aleph.config.json`의 `allowedRoutes`는 위 메서드와 경로 그대로입니다. (`GET /api/notes`, `GET·POST /api/memos`, `GET·PUT·DELETE /api/memos/:id`)
 다시 확인하는 방법
 A 계정으로 배포 주소에 로그인합니다. 브라우저에서 `F12`를 눌러 Console을 엽니다.
 B 계정 소유의 시험 메모 id(`00000000-0000-4000-8000-00000000b001`)로 `GET`·`PUT`·`DELETE`를 보냅니다. 거부되어야 합니다. (`404`)
@@ -119,23 +119,16 @@ Vercel 환경변수 (서버 전용)	쓰임
 `aleph.config.json`에 `originalApiUrl`(프로젝트 주소 + `/rest/v1/memos`, 쿼리 없는 https 경로)을 적었습니다.
 배포된 `/aleph.json`에 이 값이 빠져 있던 것이 원인이어서, `scripts/deployment-identity.mjs`가 `originalApiUrl`과 `allowedRoutes`를 형식 검사 후 `aleph.json`에 기록하도록 고쳤습니다. (시작 틀 파일을 수정한 것이므로 단계 원고의 허용 여부를 확인해야 합니다.)
 화면 코드에서 Supabase 공개 키와 `supabase-js`를 모두 걷어냈습니다. 로그인은 새 서버 함수 `api/login.js`가 대신 처리하고, 화면은 받은 접근 토큰을 탭의 `sessionStorage`에 두었다가 요청마다 `Authorization` 헤더로 보냅니다.
-판정기 경로 정책과 API
-`aleph.config.json`의 `allowedRoutes`는 판정기가 허용하는 경로만 담습니다. 전체 API 목록이 아니며, 서버의 인증·관리 기능은 API에서 별도로 처리합니다.
-공지 API 요청(`/api/class/notices` 및 `/api/class/notices/:id`)에는 `x-resource-id: instructor-announcements-v1`, 메모 API 요청에는 `x-resource-id: personal-memos-v1` 헤더가 필요합니다. 헤더가 없거나 다른 리소스 ID면 `400`으로 거부합니다. 정상 클라이언트는 자료 API 요청에 해당 헤더를 자동으로 보냅니다.
-판정기 허용 경로(메서드와 경로)
-- `GET /api/class/notices`: 반 공지 목록 읽기
-- `GET /api/class/notices/:id`: 반 공지 한 건 읽기
-- `GET /api/memos/:id`: 메모 한 건 읽기. 소유자 비교는 제작 3 API에서 수행
-- 메모 목록·생성·수정·삭제 API는 구현되어 있지만, 현재 판정기의 허용 경로에는 포함되지 않습니다.
-
-`/api/notes`와 메모 전체 목록·생성 경로, 반 공지 쓰기, 강사 자료 및 알 수 없는 경로는 판정기에서 거부합니다. 강사 공지 수정은 역할 검사를 하는 서버 관리 경로의 책임입니다. 자세한 계약은 `docs/DECIDER_REQUEST.md`의 자료 구역 경로 정책을 따릅니다.
-
-서버 API
-- `POST /api/login`: 이메일·비밀번호 → `{access_token, expires_in, email}`
-- `GET /api/class/notices`: `training_notes`의 공용 가상 공지 `{notes:[{title,content}]}`
-- `GET`·`POST /api/memos`: 본인 메모 목록·추가
-- `GET`·`PUT`·`DELETE /api/memos/:id`: 메모 한 건 조회·수정·삭제. 남의 메모는 `404`, 수정 본문에 `owner_id` 포함 시 `403`
-- `GET`·`PUT /api/class/notices/:id`: 공지 한 건 조회·수정. 수정은 강사 권한을 API에서 확인
+API와 허용 경로
+`aleph.config.json`의 `allowedRoutes`와 같습니다.
+메서드·경로	동작	로그인 없음
+`POST /api/login`	이메일·비밀번호 → `{access_token, expires_in, email}`	-
+`GET /api/notes`	`training_notes`의 공용 가상 공지(`owner_id` 없음) `{notes:[{title,content}]}`	`401`
+`GET /api/memos`	본인 메모 배열	`401`
+`POST /api/memos`	`{id?,title,body}` → `201 {id}`	`401`
+`GET /api/memos/:id`	`{id,title,body}`, 남의 메모는 `404`	`401`
+`PUT /api/memos/:id`	`{title,body}` → `{id,title,body}`, 남의 메모 `404`, `owner_id` 포함 시 `403`	`401`
+`DELETE /api/memos/:id`	`204`, 남의 메모는 `404`	`401`
 확인 상태
 확인함 (로컬, 가짜 DB·가짜 인증 서버): 4단계 A/B 시나리오 13개, `deployment-identity.mjs` 검사 8개와 `allowedRoutes` 7개, `api/login.js` 7개가 모두 통과했습니다. 화면 코드에 `sb_publishable`, `eyJ`, `supabase` 문자열이 남아 있지 않은 것도 확인했습니다.
 미확인: 실제 Supabase·Vercel 배포 환경에서의 동작, 심판의 5단계 판정(`S05_ORIGINAL_URL_MISSING` 재확인)은 아직 기록하지 않았습니다.
@@ -144,16 +137,16 @@ Vercel 프로젝트 Settings → Environment Variables에 `SUPABASE_PUBLISHABLE_
 배포 후 `/aleph.json`에 `originalApiUrl`과 `allowedRoutes`가 보이는지 확인하고, 심판을 다시 돌립니다.
 `api/notes.js`가 가상 메모를 `memos`에서 읽게 할지 결정합니다. 바꾼다면 `body`를 `content`로 바꿔 내보내고, 검증된 사용자의 행만 읽어야 4단계 보호가 유지됩니다.
 DB 권한(RLS) SQL은 다음 요청으로 남아 있습니다. `training_notes`의 RLS 상태 확인이 필요합니다.
-`/api/login`, `/api/class/notices`, `/api/memos`에는 호출 제한이 없습니다.
-`aleph.config.json`의 `step`은 현재 8이며, `build-public.mjs`와 `deployment-identity.mjs`는 1~12단계 값을 처리합니다.
+`/api/login`, `/api/notes`, `/api/memos`에는 호출 제한이 없습니다.
+`aleph.config.json`의 `step`은 현재 7이며, `build-public.mjs`와 `deployment-identity.mjs`는 1~12단계 값을 처리합니다.
 알려진 한계: 갱신 토큰을 쓰지 않아 로그인 후 약 1시간이 지나면 다시 로그인해야 하고, 로그아웃은 화면의 토큰만 지웁니다.
 다시 확인하는 방법
 배포 주소에서 A 계정으로 로그인해 메모를 추가·수정·삭제합니다. 정상이어야 합니다.
-시크릿 창에서 `curl -i -H 'x-resource-id: personal-memos-v1' https://배포주소/api/memos`를 실행합니다. Resource ID 검사를 통과한 뒤 로그인 없이 요청했으므로 `401`로 거부되어야 합니다. 헤더를 빼거나 다른 값을 보내면 `400`이어야 합니다.
+시크릿 창에서 `curl -i https://배포주소/api/memos`를 실행합니다. `401`로 거부되어야 합니다.
 A로 로그인한 상태에서 `F12` → Console에 아래를 실행합니다. B의 시험 메모는 `404`로 거부되어야 합니다.
 ```js
    const t = sessionStorage.getItem('vault.token');
-   await fetch('/api/memos/00000000-0000-4000-8000-00000000b001', { headers: { Authorization: 'Bearer ' + t, 'x-resource-id': 'personal-memos-v1' } }).then(r => r.status);
+   await fetch('/api/memos/00000000-0000-4000-8000-00000000b001', { headers: { Authorization: 'Bearer ' + t } }).then(r => r.status);
    ```
 `curl -s https://배포주소/aleph.json`에 `originalApiUrl`과 `allowedRoutes`가 있어야 합니다.
 배포된 첫 화면의 소스 보기에서 `supabase`, `sb_`를 검색해 결과가 없어야 합니다.

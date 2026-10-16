@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import notesHandler from '../api/class/notices.js';
-import noteHandler from '../api/class/notices/[id].js';
+import notesHandler from '../api/notes.js';
 import memosHandler from '../api/memos/index.js';
 import memoHandler from '../api/memos/[id].js';
 import { RESOURCE_IDS } from '../src/resource-id.mjs';
@@ -32,13 +31,8 @@ function mockResponse() {
 
 const protectedHandlers = [
   {
-    name: 'instructor announcement collection',
+    name: 'instructor announcements',
     handler: notesHandler,
-    expectedResourceId: RESOURCE_IDS.instructorAnnouncements,
-  },
-  {
-    name: 'individual instructor announcement',
-    handler: noteHandler,
     expectedResourceId: RESOURCE_IDS.instructorAnnouncements,
   },
   {

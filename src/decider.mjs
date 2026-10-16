@@ -1,12 +1,7 @@
-import config from '../aleph.config.json' with { type: 'json' };
-
-// ALEPH SDP 엔진이 확인한 요청에 경로·기기·추가 확인 규칙을 적용합니다.
+// ALEPH SDP 엔진이 확인한 요청만 받는 학생 판정기 시작점입니다.
+// 6단계부터 규칙을 하나씩 추가합니다. 이 기본 응답은 모든 요청을 거부합니다.
 // 요청 본문의 userId, role, 기기 키, 토큰을 별도로 믿거나 저장하지 마세요.
-export const RULE_IDS = Object.freeze([
-  'resource_route_policy',
-  'device_registered',
-  'step_up_required',
-]);
+export const RULE_IDS = Object.freeze(['device_registered', 'step_up_required']);
 
 const REQUEST_KEYS = [
   'schema', 'requestId', 'classId', 'projectId', 'subjectId', 'deviceId',
@@ -45,50 +40,6 @@ function isValidRecentEvents(events) {
       && Number.isInteger(event.count) && event.count > 0);
 }
 
-function isSingleResourcePath(path, collectionPath) {
-  const normalizedPath = path.startsWith('/api/') ? path.slice('/api'.length) : path;
-  const normalizedCollectionPath = collectionPath.startsWith('/api/')
-    ? collectionPath.slice('/api'.length) : collectionPath;
-  const prefix = `${normalizedCollectionPath}/`;
-  if (!normalizedPath.startsWith(prefix) || normalizedPath.includes('?') || normalizedPath.includes('#')) return false;
-  const resourceId = normalizedPath.slice(prefix.length);
-  return resourceId.length > 0 && !resourceId.includes('/');
-}
-
-function isAllowedResourceRoute(request) {
-  if (request.queryLength !== 0) return false;
-
-  return config.allowedRoutes.some(({ method, path }) => {
-    if (path === '/api/class/notices') {
-      return method === 'GET'
-        && request.service === 'notes'
-        && request.method === method
-        && request.path === path
-        && request.route === `${method} /class/notices`;
-    }
-
-    if (path === '/notes/:id') {
-      return method === 'GET'
-        && request.service === 'memos'
-        && request.method === method
-        && request.route === `${method} ${path}`
-        && isSingleResourcePath(request.path, '/notes');
-    }
-
-    const match = /^\/api\/(memos|class\/notices)\/:id$/u.exec(path);
-    const service = match?.[1] === 'memos' ? 'memos' : 'notes';
-    if (!match || request.service !== service || request.method !== method) return false;
-
-    const routePath = path.slice('/api'.length);
-    const configuredResourceMatch = request.route === `${method} ${routePath}`
-      && isSingleResourcePath(request.path, `/api/${match[1]}`);
-    const memoNotesAliasMatch = match[1] === 'memos'
-      && request.route === `${method} /notes/:id`
-      && isSingleResourcePath(request.path, '/notes');
-    return configuredResourceMatch || memoNotesAliasMatch;
-  });
-}
-
 function isValidRequest(request) {
   if (!hasExactKeys(request, REQUEST_KEYS)) return false;
   return request.schema === 'aleph.decision.v1'
@@ -121,16 +72,6 @@ export async function decide(request) {
     throw new TypeError('Invalid engine decision request');
   }
 
-  if (!isAllowedResourceRoute(request)) {
-    return {
-      schema: 'aleph.decision.v1',
-      requestId: request.requestId,
-      decision: 'deny',
-      reasonCode: 'resource_route_not_allowed',
-      ruleIds: [RULE_IDS[0]],
-    };
-  }
-
   const registered = request.deviceRegistered === true;
   const unusualAccess = request.signals.source === 'judge_fixture'
     && (request.signals.hour < 6 || request.signals.hour >= 22)
@@ -144,8 +85,7 @@ export async function decide(request) {
     decision: !registered ? 'deny' : stepUpRequired ? 'step_up' : 'allow',
     reasonCode: !registered ? 'device_not_registered'
       : stepUpRequired ? 'step_up_required' : 'approved',
-    ruleIds: !registered ? [RULE_IDS[0], RULE_IDS[1]]
-      : stepUpRequired ? [RULE_IDS[0], RULE_IDS[1], RULE_IDS[2]]
-        : [RULE_IDS[0], RULE_IDS[1]],
+    ruleIds: !registered || !stepUpRequired
+      ? [RULE_IDS[0]] : [RULE_IDS[0], RULE_IDS[1]],
   };
 }

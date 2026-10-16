@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { deploymentIdentity } from '../scripts/deployment-identity.mjs';
 import { runAttackChecks } from '../src/attack-check.mjs';
-import { RESOURCE_IDS } from '../src/resource-id.mjs';
 
 const config = {
   step: 1,
@@ -64,12 +63,10 @@ test('attack check reads the public notes API without credentials', async () => 
 
     assert.equal(
       requestUrl,
-      'https://student-defense.vercel.app/api/class/notices'
+      'https://student-defense.vercel.app/api/notes'
     );
     assert.equal(options.redirect, 'error');
-    assert.deepEqual(options.headers, {
-      'x-resource-id': RESOURCE_IDS.instructorAnnouncements,
-    });
+    assert.equal('headers' in options, false);
     assert.match(result.observed, /메모 1건을 반환/u);
 
     globalThis.fetch = async () =>
