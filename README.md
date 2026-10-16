@@ -130,7 +130,14 @@ API 구현 경로 전체와 판정기 허용 경로는 다릅니다. `allowedRou
 `PUT /api/memos/:id`	`{title,body}` → `{id,title,body}`, 남의 메모 `404`, `owner_id` 포함 시 `403`	`401`
 `DELETE /api/memos/:id`	`204`, 남의 메모는 `404`	`401`
 `POST /api/memos/restore`	시험 계정 B의 지정 메모 한 건을 검증된 사본으로 복원 → `{id,owner_id,contentSha256}`	`401`
+`POST /api/notes/restore`	강사가 허용된 공용 가상 공지 한 건을 복원 → `{id,owner_id,contentSha256}`	`401`
 `POST /api/policies/restore`	시험 정책 사본 미리보기 및 확인 후 지정 범위 복원	`401`
+
+공지 복원 서비스·경로
+- 서비스: `instructor-announcements-v1`; 경로: `POST /api/notes/restore`. 경로는 `aleph.config.json`의 `restoreRoute`에 선언되어 있으며, 판정기 `allowedRoutes`와는 별도입니다. `X-Resource-ID: instructor-announcements-v1`와 로그인한 강사 권한이 필요합니다.
+- 요청 본문은 `{snapshot:{id,owner_id,title,content,contentSha256}}`입니다. 서버는 seed에 있는 네 개의 고정 공지 ID만 허용하고 `owner_id`가 `null`인지 확인합니다. `contentSha256`은 UTF-8 `JSON.stringify({title,content})`의 SHA-256과 일치해야 합니다. API는 동일한 ID와 공용 소유자 조건으로 해당 공지의 `title`, `content`만 갱신하고, 응답의 ID·소유자·내용 해시를 재확인합니다. 다른 공지와 감사 이력은 갱신하지 않습니다.
+- 이 API는 사본 발급자의 서명이나 출처를 검증하지 않습니다. 내용 해시는 제공된 제목·내용의 일관성만 확인하므로, 이를 신뢰된 사본 증명으로 간주하지 마세요. 정상은 `200`, 잘못된 사본은 `400`, 로그인한 사용자가 강사가 아니면 `403`, 대상 공지가 없으면 `404`, 저장소 오류나 갱신 결과 검증 실패는 `502`입니다.
+- 로컬 재실행: 저장소 루트에서 `node --test test/notes-restore.test.mjs test/resource-authorization.test.mjs test/instructors.test.mjs`를 실행합니다. 가짜 인증·DB만 사용하며 실제 DB·배포 복원 결과는 아닙니다.
 
 메모 복원 서비스·경로
 - 서비스: `personal-memos-v1`; 경로: `POST /api/memos/restore`.
@@ -140,7 +147,7 @@ API 구현 경로 전체와 판정기 허용 경로는 다릅니다. `allowedRou
 - 로컬 재실행: 저장소 루트 터미널에서 `node --test test/memo-restore.test.mjs` 실행. 가짜 인증·DB로 시험 계정 B의 고정 시험 메모만 복원하고, 다른 메모와 감사 이력이 그대로인지 확인합니다. 실제 계정·DB·배포에서 실행한 결과는 아닙니다.
 
 정책 복원 서비스·경로
-- 서비스: `test-policy-restore-v1`; 경로: `POST /api/policies/restore`. 현재 [`aleph.config.json`](./aleph.config.json)의 `restoreRoute`에는 정책 복원 경로와 메모 복원 경로 `POST /api/memos/restore`, 그리고 `POST /api/notes/restore`가 선언돼 있습니다. 메모 복원 경로는 위의 `personal-memos-v1` 기능이며 정책 복원과 별개입니다. `POST /api/notes/restore`는 설정에만 있고 현재 API 구현·시험은 확인되지 않아 사용 가능한 경로로 간주하지 않습니다.
+- 서비스: `test-policy-restore-v1`; 경로: `POST /api/policies/restore`. 현재 [`aleph.config.json`](./aleph.config.json)의 `restoreRoute`에는 정책 복원 경로, 시험 메모 복원 `POST /api/memos/restore`, 공지 복원 `POST /api/notes/restore`가 선언돼 있습니다. 메모·공지 복원은 정책 복원과 별개입니다.
 - Supabase의 `test_policy_snapshots`와 `test_policy_state`는 정책 시험 전용 저장소입니다. 스키마는 [`supabase/migrations/20261016000100_create_test_policy_restore.sql`](./supabase/migrations/20261016000100_create_test_policy_restore.sql)에 있고, 서버는 `test_policy_state`의 `singleton` 행만 갱신합니다. 이 테이블은 운영 판정기 정책과 별도이며, 운영 정책을 바꾸지 않습니다. 복구를 사용하려면 관리자가 시험 정책 singleton과 침해 전 사본을 별도 준비해야 합니다. 사본이 없으면 `404`로 중단합니다.
 - 사본 서명은 서버 전용 `POLICY_SNAPSHOT_HMAC_KEY` 환경 변수(최소 32 UTF-8 바이트)로 검증합니다. 이 값은 공식 호스팅 환경의 비밀 입력란에 직접 설정하고 코드·Git·요청·로그에 넣지 않습니다. 사본의 서명은 HMAC-SHA256이며, 서명 대상은 canonical JSON의 `{version,createdAt,intrusionAt,policy}`입니다. 시각은 UTC ISO 형식이며 저장 후 밀리초 단위 UTC ISO로 정규화해 서명합니다. 확인 요청 때 저장소에서 사본을 다시 읽고 서명을 다시 검증합니다. 사본 생성·서명 작업은 이 API에 포함되지 않으며, 사전 침해 시점에 신뢰된 관리 절차로 준비되어야 합니다.
 - 호출은 인증된 POST, 허용된 `POLICY_RESTORE_OPERATOR_ID` 계정, `X-Resource-ID: test-policy-restore-v1`을 요구합니다. `POLICY_RESTORE_OPERATOR_ID`는 공식 호스팅 설정에 복원 권한이 있는 시험 운영자의 인증 사용자 UUID로 지정합니다. 먼저 `{action:"preview",version,restorePaths}`를 POST하면 사본 버전·변경 경로·전후 차이와 5분 유효 확인 토큰을 반환합니다. 변경 범위와 버전을 검토한 뒤에만 `{action:"confirm",confirmationToken}`을 별도 POST합니다. 확인 단계에서도 사본을 다시 읽고 검증하며, 미리보기 뒤 정책이 변경됐으면 거부합니다. 시험 정책 revision 조건부 갱신으로 동시 변경을 덮어쓰지 않습니다. `services`, `serviceRules`/`service_rules`, `audit`, `auditHistory`/`audit_history`, `auditLog`/`audit_log` 경로는 복원 범위에서 거부하며 다른 시험 정책 필드와 기존 감사 기록은 보존합니다.
