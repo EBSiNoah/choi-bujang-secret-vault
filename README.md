@@ -123,6 +123,7 @@ Vercel 환경변수 (서버 전용)	쓰임
 `aleph.config.json`의 `allowedRoutes`는 판정기가 허용하는 경로만 담습니다. 전체 API 목록이 아니며, 서버의 인증·관리 기능은 API에서 별도로 처리합니다.
 공지 API 요청(`/api/notes` 및 `/api/notes/:id`)에는 `x-resource-id: instructor-announcements-v1`, 메모 API 요청에는 `x-resource-id: personal-memos-v1` 헤더가 필요합니다. 헤더가 없거나 다른 리소스 ID면 `400`으로 거부합니다. 정상 클라이언트는 자료 API 요청에 해당 헤더를 자동으로 보냅니다.
 판정기 허용 경로(메서드와 경로)
+- `GET /api/notes`: 반 공지 목록 읽기
 - `GET /api/notes/:id`: 반 공지 한 건 읽기
 - `GET /api/memos/:id`: 메모 한 건 읽기. 소유자 비교는 제작 3 API에서 수행
 - 메모 목록·생성·수정·삭제 API는 구현되어 있지만, 현재 판정기의 허용 경로에는 포함되지 않습니다.

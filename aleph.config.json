@@ -12,6 +12,10 @@
   "allowedRoutes": [
     {
       "method": "GET",
+      "path": "/api/notes"
+    },
+    {
+      "method": "GET",
       "path": "/api/notes/:id"
     },
     {

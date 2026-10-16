@@ -59,6 +59,14 @@ function isAllowedResourceRoute(request) {
   if (request.queryLength !== 0) return false;
 
   return config.allowedRoutes.some(({ method, path }) => {
+    if (path === '/api/notes') {
+      return method === 'GET'
+        && request.service === 'notes'
+        && request.method === method
+        && request.path === path
+        && request.route === `${method} /notes`;
+    }
+
     const match = /^\/api\/(memos|notes)\/:id$/u.exec(path);
     if (!match || request.service !== match[1] || request.method !== method) return false;
 

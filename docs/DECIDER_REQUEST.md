@@ -31,7 +31,7 @@
 경로 정책은 엔진이 확인한 `service`, `method`, `path`, `route`의 조합을 검사합니다. `path`는 `/api/memos/:id` 같은 실제 API 경로이고, `route`는 엔진 계약처럼 API 접두사를 제외한 `GET /memos/:id` 모양입니다. 쿼리 문자열이 하나라도 있는 요청은 거부하며, 쿼리로 자료 종류나 기능을 선택하지 않습니다.
 
 - 메모는 `memos` 서비스의 실제 경로 `/api/memos/:id`와 route `GET /memos/:id` 조합처럼 단일 자원 읽기만 허용합니다. ID 없는 전체 목록·생성 경로는 허용하지 않습니다. ID 형식은 UUID로 제한하지 않습니다. 메모 소유자 비교는 제작 3의 API 책임입니다.
-- 반 공지는 `notes` 서비스의 실제 경로 `/api/notes/:id`와 route `GET /notes/:id` 조합에서 GET만 허용합니다. POST, PUT, PATCH, DELETE는 거부합니다. 강사의 공지 수정 권한은 판정 요청에 역할이 없으므로 서버의 관리 경로에서 확인합니다.
+- 반 공지는 `notes` 서비스의 실제 경로 `/api/notes`와 route `GET /notes` 조합으로 목록 읽기를 허용하고, `/api/notes/:id`와 route `GET /notes/:id` 조합으로 단건 읽기도 허용합니다. 목록 요청에는 쿼리를 허용하지 않습니다. POST, PUT, PATCH, DELETE는 거부합니다. 강사의 공지 수정 권한은 판정 요청에 역할이 없으므로 서버의 관리 경로에서 확인합니다.
 - 강사 자료 서비스와 알려지지 않은 서비스·경로는 판정기에서 모두 거부합니다.
 - `:id` 한 세그먼트와 더 깊은 경로를 구분합니다. 같은 깊이에 `export` 같은 기능 경로를 추가하지 않습니다.
 

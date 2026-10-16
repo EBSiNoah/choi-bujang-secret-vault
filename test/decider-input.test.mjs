@@ -101,9 +101,33 @@ test('allows only a single memo GET matching the configured API path', async () 
 
 test('configures only routes allowed by the resource policy', () => {
   assert.deepEqual(config.allowedRoutes, [
+    { method: 'GET', path: '/api/notes' },
     { method: 'GET', path: '/api/notes/:id' },
     { method: 'GET', path: '/api/memos/:id' },
   ]);
+});
+
+test('allows the class announcement list only through its configured GET route', async () => {
+  const { normal } = fixtureRequests();
+  const announcementList = {
+    ...normal,
+    service: 'notes',
+    method: 'GET',
+    path: '/api/notes',
+    route: 'GET /notes',
+  };
+
+  assert.equal((await decide(announcementList)).decision, 'allow');
+  for (const change of [
+    { service: 'memos' },
+    { method: 'POST', route: 'POST /notes' },
+    { route: 'GET /notes/:id' },
+    { queryLength: 1 },
+  ]) {
+    const response = await decide({ ...announcementList, ...change });
+    assert.equal(response.decision, 'deny');
+    assert.equal(response.reasonCode, 'resource_route_not_allowed');
+  }
 });
 
 test('allows a class announcement only through the notes service and exact single-ID route', async () => {
@@ -120,7 +144,6 @@ test('allows a class announcement only through the notes service and exact singl
   for (const wrongRoute of [
     { service: 'memos', path: '/api/notes/announcement-id', route: 'GET /notes/:id' },
     { service: 'notes', path: '/api/memos/own-memo-id', route: 'GET /memos/:id' },
-    { service: 'notes', path: '/api/notes', route: 'GET /notes' },
     { service: 'notes', path: '/api/notes/announcement-id/export', route: 'GET /notes/:id/export' },
     { service: 'notes', path: '/api/notes/announcement-id', route: 'GET /notes/export' },
   ]) {
