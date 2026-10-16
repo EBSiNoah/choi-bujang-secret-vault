@@ -81,7 +81,7 @@ URL·본문의 `userId`, `role`, `owner_id`는 믿지 않습니다.
 `GET /api/memos/:id`	`200 {id,title,body}`	`404`	`401`
 `PUT /api/memos/:id`	`200 {id,title,body}`	`404` (`owner_id` 포함 시 `403`)	`401`
 `DELETE /api/memos/:id`	`204`	`404`	`401`
-`aleph.config.json`의 `allowedRoutes`는 위 메서드와 경로 그대로입니다. (`GET /api/notes`, `GET·POST /api/memos`, `GET·PUT·DELETE /api/memos/:id`)
+`aleph.config.json`의 `allowedRoutes`에는 판정기가 허용하는 자료 단건 경로만 적습니다: `GET /api/notes/:id`, `GET·PUT·DELETE /api/memos/:id`. 메모 전체 목록·생성, 공지 목록·쓰기, 강사 자료와 로그인 경로는 판정기 허용 경로가 아닙니다.
 다시 확인하는 방법
 A 계정으로 배포 주소에 로그인합니다. 브라우저에서 `F12`를 눌러 Console을 엽니다.
 B 계정 소유의 시험 메모 id(`00000000-0000-4000-8000-00000000b001`)로 `GET`·`PUT`·`DELETE`를 보냅니다. 거부되어야 합니다. (`404`)
@@ -120,7 +120,7 @@ Vercel 환경변수 (서버 전용)	쓰임
 배포된 `/aleph.json`에 이 값이 빠져 있던 것이 원인이어서, `scripts/deployment-identity.mjs`가 `originalApiUrl`과 `allowedRoutes`를 형식 검사 후 `aleph.json`에 기록하도록 고쳤습니다. (시작 틀 파일을 수정한 것이므로 단계 원고의 허용 여부를 확인해야 합니다.)
 화면 코드에서 Supabase 공개 키와 `supabase-js`를 모두 걷어냈습니다. 로그인은 새 서버 함수 `api/login.js`가 대신 처리하고, 화면은 받은 접근 토큰을 탭의 `sessionStorage`에 두었다가 요청마다 `Authorization` 헤더로 보냅니다.
 API와 허용 경로
-`aleph.config.json`의 `allowedRoutes`와 같습니다.
+API 구현 경로 전체와 판정기 허용 경로는 다릅니다. `allowedRoutes`에는 `GET /api/notes/:id`, `GET·PUT·DELETE /api/memos/:id`만 적으며, 메모 주인 비교는 제작 3의 API에서 수행합니다.
 메서드·경로	동작	로그인 없음
 `POST /api/login`	이메일·비밀번호 → `{access_token, expires_in, email}`	-
 `GET /api/notes`	`training_notes`의 공용 가상 공지(`owner_id` 없음) `{notes:[{title,content}]}`	`401`

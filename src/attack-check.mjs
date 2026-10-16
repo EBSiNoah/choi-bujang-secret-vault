@@ -1,5 +1,7 @@
 // Checks what a visitor without credentials can read from the public app.
 // Never include note bodies, tokens, or private keys in the result.
+import { RESOURCE_IDS } from './resource-id.mjs';
+
 export async function runAttackChecks(config) {
   if (!Number.isInteger(config.step) || config.step < 1 || config.step > 12) {
     throw new Error('aleph.config.json의 step은 1~12 정수여야 합니다.');
@@ -25,6 +27,7 @@ export async function runAttackChecks(config) {
   }
 
   const response = await fetch(new URL('/api/notes', app), {
+    headers: { 'X-Resource-ID': RESOURCE_IDS.instructorAnnouncements },
     redirect: 'error',
     signal: AbortSignal.timeout(10000),
   });

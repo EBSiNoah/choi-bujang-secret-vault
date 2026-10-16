@@ -22,6 +22,19 @@ export function parseMemo(body) {
   return { title, body: text };
 }
 
+export function selectOwnedMemos(rows, userId) {
+  if (!Array.isArray(rows) || rows.some((row) =>
+    !row || typeof row.owner_id !== 'string')) return null;
+
+  const owned = rows.filter((row) => row.owner_id === userId);
+  if (owned.some((row) =>
+    typeof row.id !== 'string'
+    || typeof row.title !== 'string'
+    || typeof row.body !== 'string')) return null;
+
+  return owned.map(({ id, title, body }) => ({ id, title, body }));
+}
+
 // 메서드·설정·로그인을 확인합니다. 통과하면 { userId, rest } 를 돌려주고,
 // 거부할 때는 응답을 이미 보낸 뒤 null 을 돌려줍니다.
 export async function memosContext(request, response, methods) {

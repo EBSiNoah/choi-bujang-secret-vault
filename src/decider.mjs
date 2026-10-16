@@ -1,7 +1,11 @@
 // ALEPH SDP 엔진이 확인한 요청만 받는 학생 판정기 시작점입니다.
 // 6단계부터 규칙을 하나씩 추가합니다. 이 기본 응답은 모든 요청을 거부합니다.
 // 요청 본문의 userId, role, 기기 키, 토큰을 별도로 믿거나 저장하지 마세요.
-export const RULE_IDS = Object.freeze(['device_registered', 'step_up_required']);
+export const RULE_IDS = Object.freeze([
+  'resource_route_policy',
+  'device_registered',
+  'step_up_required',
+]);
 
 const REQUEST_KEYS = [
   'schema', 'requestId', 'classId', 'projectId', 'subjectId', 'deviceId',
@@ -67,9 +71,37 @@ function isValidRequest(request) {
     && isValidSignals(request.signals);
 }
 
+function isAllowedResourceRoute(request) {
+  if (request.queryLength !== 0) return false;
+
+  if (request.service === 'memos') {
+    return ['GET', 'PUT', 'DELETE'].includes(request.method)
+      && /^\/api\/memos\/[^/]+$/u.test(request.path)
+      && request.route === `${request.method} /api/memos/:id`;
+  }
+
+  if (request.service === 'notes') {
+    return request.method === 'GET'
+      && /^\/api\/notes\/[^/]+$/u.test(request.path)
+      && request.route === 'GET /api/notes/:id';
+  }
+
+  return false;
+}
+
 export async function decide(request) {
   if (!isValidRequest(request)) {
     throw new TypeError('Invalid engine decision request');
+  }
+
+  if (!isAllowedResourceRoute(request)) {
+    return {
+      schema: 'aleph.decision.v1',
+      requestId: request.requestId,
+      decision: 'deny',
+      reasonCode: 'resource_route_not_allowed',
+      ruleIds: [RULE_IDS[0]],
+    };
   }
 
   const registered = request.deviceRegistered === true;
@@ -86,6 +118,6 @@ export async function decide(request) {
     reasonCode: !registered ? 'device_not_registered'
       : stepUpRequired ? 'step_up_required' : 'approved',
     ruleIds: !registered || !stepUpRequired
-      ? [RULE_IDS[0]] : [RULE_IDS[0], RULE_IDS[1]],
+      ? [RULE_IDS[0], RULE_IDS[1]] : [...RULE_IDS],
   };
 }

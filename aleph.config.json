@@ -10,34 +10,10 @@
     "audience": "authenticated"
   },
   "allowedRoutes": [
-    {
-      "method": "POST",
-      "path": "/api/login"
-    },
-    {
-      "method": "GET",
-      "path": "/api/notes"
-    },
-    {
-      "method": "GET",
-      "path": "/api/memos"
-    },
-    {
-      "method": "POST",
-      "path": "/api/memos"
-    },
-    {
-      "method": "GET",
-      "path": "/api/memos/:id"
-    },
-    {
-      "method": "PUT",
-      "path": "/api/memos/:id"
-    },
-    {
-      "method": "DELETE",
-      "path": "/api/memos/:id"
-    }
+    { "method": "GET", "path": "/api/notes/:id" },
+    { "method": "GET", "path": "/api/memos/:id" },
+    { "method": "PUT", "path": "/api/memos/:id" },
+    { "method": "DELETE", "path": "/api/memos/:id" }
   ],
   "originalApiUrl": "https://lcvrjogmyryihpkdpidf.supabase.co/rest/v1/memos",
   "restoreRoute": null

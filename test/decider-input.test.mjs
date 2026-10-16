@@ -1,7 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { decide } from '../src/decider.mjs';
+import { decide, RULE_IDS } from '../src/decider.mjs';
 import { fixtureRequests } from '../scripts/fixture-7.mjs';
+import config from '../aleph.config.json' with { type: 'json' };
+
+test('allowedRoutes lists only the exact routes accepted by the resource policy', () => {
+  assert.deepEqual(config.allowedRoutes, [
+    { method: 'GET', path: '/api/notes/:id' },
+    { method: 'GET', path: '/api/memos/:id' },
+    { method: 'PUT', path: '/api/memos/:id' },
+    { method: 'DELETE', path: '/api/memos/:id' },
+  ]);
+});
 
 test('accepts signals only when their source and values match the contract', async () => {
   const { normal } = fixtureRequests();
@@ -82,7 +92,12 @@ test('allows the suspicious fixture after a verified step-up', async () => {
 
 test('allows one memo ID without restricting its format and keeps the memo methods', async () => {
   const { normal } = fixtureRequests();
-  const request = { ...normal, path: '/api/memos/not-a-uuid' };
+  const request = {
+    ...normal,
+    service: 'memos',
+    path: '/api/memos/not-a-uuid',
+    route: 'GET /api/memos/:id',
+  };
 
   assert.equal((await decide(request)).decision, 'allow');
   for (const method of ['PUT', 'DELETE']) {
@@ -92,6 +107,10 @@ test('allows one memo ID without restricting its format and keeps the memo metho
       route: `${method} /api/memos/:id`,
     })).decision, 'allow');
   }
+  assert.equal((await decide({
+    ...request,
+    service: 'notes',
+  })).decision, 'deny');
 });
 
 test('allows a class announcement only through the notes service and exact single-ID route', async () => {
@@ -175,5 +194,16 @@ test('denies teacher materials and unknown service routes', async () => {
     const response = await decide(request);
     assert.equal(response.decision, 'deny');
     assert.equal(response.reasonCode, 'resource_route_not_allowed');
+  }
+
+  for (const method of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']) {
+    const response = await decide({
+      ...teacherMaterial,
+      method,
+      route: `${method} /api/teacher-materials/:id`,
+    });
+    assert.equal(response.decision, 'deny');
+    assert.equal(response.reasonCode, 'resource_route_not_allowed');
+    assert.deepEqual(response.ruleIds, [RULE_IDS[0]]);
   }
 });

@@ -88,9 +88,24 @@
     const say = (text) => { $('msg').textContent = text; };
     const TOKEN_KEY = 'vault.token';   // sessionStorage: 탭을 닫으면 사라집니다
     const EMAIL_KEY = 'vault.email';
+    const RESOURCE_IDS = Object.freeze({
+      instructorAnnouncements: 'instructor-announcements-v1',
+      personalMemos: 'personal-memos-v1',
+    });
     let editingId = null;
 
     const msgItem = (text) => Object.assign(document.createElement('li'), { textContent: text });
+
+    function resourceIdForPath(path) {
+      if (['/api/notes', '/api/class/notices'].some(base =>
+        path === base || path.startsWith(`${base}/`))) {
+        return RESOURCE_IDS.instructorAnnouncements;
+      }
+      if (path === '/api/memos' || path.startsWith('/api/memos/')) {
+        return RESOURCE_IDS.personalMemos;
+      }
+      throw new Error('자료의 자원 ID를 확인할 수 없습니다.');
+    }
 
     function showLogin() {
       $('view-login').hidden = false;
@@ -117,6 +132,7 @@
         headers: {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
           ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+          'X-Resource-ID': resourceIdForPath(path),
         },
       });
       if (response.status === 401) logout('로그인이 만료되었거나 권한이 없습니다. 다시 로그인하세요.');

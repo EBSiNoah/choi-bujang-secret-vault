@@ -1,6 +1,16 @@
-import { memosContext, parseMemo, isUuid, newId } from '../../src/memos.mjs';
+import {
+  memosContext,
+  parseMemo,
+  isUuid,
+  newId,
+  selectOwnedMemos,
+} from '../../src/memos.mjs';
+import { requireResourceId, RESOURCE_IDS } from '../../src/resource-id.mjs';
 
 export default async function handler(request, response) {
+  response.setHeader('Cache-Control', 'no-store');
+  if (!requireResourceId(request, response, RESOURCE_IDS.personalMemos)) return;
+
   const ctx = await memosContext(request, response, ['GET', 'POST']);
   if (!ctx) return;
 
@@ -8,9 +18,11 @@ export default async function handler(request, response) {
     if (request.method === 'GET') {
       // 목록: 로그인한 사용자 본인의 메모만 돌려줍니다.
       const upstream = await ctx.rest(
-        `memos?select=id,title,body&owner_id=eq.${encodeURIComponent(ctx.userId)}&order=created_at.asc`);
+        `memos?select=id,owner_id,title,body&owner_id=eq.${encodeURIComponent(ctx.userId)}&order=created_at.asc`);
       if (!upstream.ok) return response.status(502).json({ error: 'MEMOS_SERVICE_UNAVAILABLE' });
-      return response.status(200).json(await upstream.json());
+      const rows = selectOwnedMemos(await upstream.json(), ctx.userId);
+      if (!rows) return response.status(502).json({ error: 'MEMO_OWNERSHIP_CHECK_FAILED' });
+      return response.status(200).json(rows);
     }
 
     // POST: { id?, title, body } -> 201 { id }

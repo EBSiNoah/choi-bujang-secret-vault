@@ -34,24 +34,28 @@ const protectedHandlers = [
     name: 'instructor announcements',
     handler: notesHandler,
     expectedResourceId: RESOURCE_IDS.instructorAnnouncements,
+    otherResourceId: RESOURCE_IDS.personalMemos,
   },
   {
     name: 'memo collection',
     handler: memosHandler,
     expectedResourceId: RESOURCE_IDS.personalMemos,
+    otherResourceId: RESOURCE_IDS.instructorAnnouncements,
   },
   {
     name: 'individual memo',
     handler: memoHandler,
     expectedResourceId: RESOURCE_IDS.personalMemos,
+    otherResourceId: RESOURCE_IDS.instructorAnnouncements,
   },
 ];
 
-for (const { name, handler, expectedResourceId } of protectedHandlers) {
+for (const { name, handler, expectedResourceId, otherResourceId } of protectedHandlers) {
   test(`${name} requires its own resource ID`, async () => {
     for (const [headers, expectedError] of [
       [{}, 'RESOURCE_ID_REQUIRED'],
       [{ 'x-resource-id': 'other-resource-v1' }, 'RESOURCE_ID_MISMATCH'],
+      [{ 'x-resource-id': otherResourceId }, 'RESOURCE_ID_MISMATCH'],
     ]) {
       const response = mockResponse();
       await handler({ method: 'GET', headers, query: { id: 'memo-id' } }, response);
@@ -59,6 +63,7 @@ for (const { name, handler, expectedResourceId } of protectedHandlers) {
       assert.equal(response.statusCode, 400);
       assert.deepEqual(response.body, { error: expectedError });
       assert.equal(response.headers.get('x-resource-id'), expectedResourceId);
+      assert.equal(response.headers.get('cache-control'), 'no-store');
     }
   });
 }
