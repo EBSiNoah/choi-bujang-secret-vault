@@ -46,9 +46,12 @@ function isValidRecentEvents(events) {
 }
 
 function isSingleResourcePath(path, collectionPath) {
-  const prefix = `${collectionPath}/`;
-  if (!path.startsWith(prefix) || path.includes('?') || path.includes('#')) return false;
-  const resourceId = path.slice(prefix.length);
+  const normalizedPath = path.startsWith('/api/') ? path.slice('/api'.length) : path;
+  const normalizedCollectionPath = collectionPath.startsWith('/api/')
+    ? collectionPath.slice('/api'.length) : collectionPath;
+  const prefix = `${normalizedCollectionPath}/`;
+  if (!normalizedPath.startsWith(prefix) || normalizedPath.includes('?') || normalizedPath.includes('#')) return false;
+  const resourceId = normalizedPath.slice(prefix.length);
   return resourceId.length > 0 && !resourceId.includes('/');
 }
 
