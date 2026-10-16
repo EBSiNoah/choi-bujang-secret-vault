@@ -67,6 +67,14 @@ function isAllowedResourceRoute(request) {
         && request.route === `${method} /class/notices`;
     }
 
+    if (path === '/notes/:id') {
+      return method === 'GET'
+        && request.service === 'memos'
+        && request.method === method
+        && request.route === `${method} ${path}`
+        && isSingleResourcePath(request.path, '/notes');
+    }
+
     const match = /^\/api\/(memos|class\/notices)\/:id$/u.exec(path);
     const service = match?.[1] === 'memos' ? 'memos' : 'notes';
     if (!match || request.service !== service || request.method !== method) return false;
