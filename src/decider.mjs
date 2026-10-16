@@ -82,8 +82,12 @@ function isAllowedResourceRoute(request) {
 
   if (request.service === 'notes') {
     return request.method === 'GET'
-      && /^\/api\/notes\/[^/]+$/u.test(request.path)
-      && request.route === 'GET /api/notes/:id';
+      && (
+        (/^\/notes\/[^/]+$/u.test(request.path)
+          && request.route === 'GET /notes/:id')
+        || (/^\/api\/notes\/[^/]+$/u.test(request.path)
+          && request.route === 'GET /api/notes/:id')
+      );
   }
 
   return false;
