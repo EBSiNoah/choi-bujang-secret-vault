@@ -1,6 +1,42 @@
-// 9단계에서 학생이 채우는 탐지 함수입니다. 이 기본값은 어떤 접속도 회수하지 않습니다.
-// 반 엔진이 검증한 사건만 전달해야 하며, 브라우저가 보낸 사용자 번호는 받지 않습니다.
+// 9단계 연습 사건은 at, method, identity.sub만 사용합니다.
+const WINDOW_MS = 10 * 60 * 1000;
+const BURST_LIMIT = 120;
+
 export function detect(events) {
   if (!Array.isArray(events)) throw new TypeError('invalid_detection_events');
+
+  const readsBySubject = new Map();
+  for (const event of events) {
+    if (!event || typeof event !== 'object' || Array.isArray(event)) {
+      throw new TypeError('invalid_detection_event');
+    }
+
+    const { at, method, identity } = event;
+    if (typeof at !== 'string' || !Number.isFinite(Date.parse(at))
+      || typeof method !== 'string' || method.length === 0
+      || !identity || typeof identity !== 'object' || Array.isArray(identity)
+      || typeof identity.sub !== 'string' || identity.sub.length === 0) {
+      throw new TypeError('invalid_detection_event');
+    }
+
+    if (method !== 'GET') continue;
+    const times = readsBySubject.get(identity.sub) ?? [];
+    times.push(Date.parse(at));
+    readsBySubject.set(identity.sub, times);
+  }
+
+  for (const [subject, times] of readsBySubject) {
+    times.sort((a, b) => a - b);
+    let firstInWindow = 0;
+    for (let lastInWindow = 0; lastInWindow < times.length; lastInWindow += 1) {
+      while (times[lastInWindow] - times[firstInWindow] >= WINDOW_MS) {
+        firstInWindow += 1;
+      }
+      if (lastInWindow - firstInWindow + 1 > BURST_LIMIT) {
+        return { action: 'propose_revocation', reasonCode: 'burst_read', subject };
+      }
+    }
+  }
+
   return { action: 'observe' };
 }
