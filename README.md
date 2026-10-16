@@ -131,7 +131,6 @@ API 구현 경로 전체와 판정기 허용 경로는 다릅니다. `allowedRou
 `DELETE /api/memos/:id`	`204`, 남의 메모는 `404`	`401`
 `POST /api/memos/restore`	시험 계정 B의 지정 메모 한 건을 검증된 사본으로 복원 → `{id,owner_id,contentSha256}`	`401`
 `POST /api/policies/restore`	시험 정책 사본 미리보기 및 확인 후 지정 범위 복원	`401`
-`POST /api/notes/restore`	`restoreRoute` 설정에만 있음; API 구현·시험 미확인	미실행
 
 메모 복원 서비스·경로
 - 서비스: `personal-memos-v1`; 경로: `POST /api/memos/restore`.
