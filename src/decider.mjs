@@ -81,13 +81,12 @@ function isAllowedResourceRoute(request) {
   }
 
   if (request.service === 'notes') {
-    return request.method === 'GET'
-      && (
-        (/^\/notes\/[^/]+$/u.test(request.path)
-          && request.route === 'GET /notes/:id')
-        || (/^\/api\/notes\/[^/]+$/u.test(request.path)
-          && request.route === 'GET /api/notes/:id')
-      );
+    if (request.method !== 'GET') return false;
+    if (request.path === '/api/notes') return request.route === 'GET /api/notes';
+    return (/^\/notes\/[^/]+$/u.test(request.path)
+        && request.route === 'GET /notes/:id')
+      || (/^\/api\/notes\/[^/]+$/u.test(request.path)
+        && request.route === 'GET /api/notes/:id');
   }
 
   return false;

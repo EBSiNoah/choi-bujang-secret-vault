@@ -6,6 +6,7 @@ import config from '../aleph.config.json' with { type: 'json' };
 
 test('allowedRoutes lists only the exact routes accepted by the resource policy', () => {
   assert.deepEqual(config.allowedRoutes, [
+    { method: 'GET', path: '/api/notes' },
     { method: 'GET', path: '/api/notes/:id' },
     { method: 'GET', path: '/api/memos/:id' },
     { method: 'PUT', path: '/api/memos/:id' },
@@ -124,10 +125,15 @@ test('allows a class announcement only through the notes service and exact singl
   };
 
   assert.equal((await decide(announcement)).decision, 'allow');
+  assert.equal((await decide({
+    ...announcement,
+    path: '/api/notes',
+    route: 'GET /api/notes',
+  })).decision, 'allow');
   for (const wrongRoute of [
     { service: 'memos', path: '/api/notes/announcement-id', route: 'GET /api/notes/:id' },
     { service: 'notes', path: '/api/memos/own-memo-id', route: 'GET /api/memos/:id' },
-    { service: 'notes', path: '/api/notes', route: 'GET /api/notes' },
+    { service: 'memos', path: '/api/notes', route: 'GET /api/notes' },
     { service: 'notes', path: '/api/notes/announcement-id/export', route: 'GET /api/notes/:id/export' },
     { service: 'notes', path: '/api/notes/announcement-id', route: 'GET /api/notes/export' },
   ]) {
@@ -141,6 +147,7 @@ test('denies memo collections, nested feature routes, wrong route shapes, and qu
   const { normal } = fixtureRequests();
   const invalidRoutes = [
     { path: '/api/memos', route: 'GET /api/memos' },
+    { service: 'memos', path: '/api/notes', route: 'GET /api/notes' },
     { path: '/api/memos/demo/export', route: 'GET /api/memos/:id/export' },
     { path: '/api/memos/demo', route: 'GET /api/memos/export' },
     { path: '/api/memos/export', route: 'GET /api/memos/export' },

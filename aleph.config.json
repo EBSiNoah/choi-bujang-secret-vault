@@ -10,6 +10,7 @@
     "audience": "authenticated"
   },
   "allowedRoutes": [
+    { "method": "GET", "path": "/api/notes" },
     { "method": "GET", "path": "/api/notes/:id" },
     { "method": "GET", "path": "/api/memos/:id" },
     { "method": "PUT", "path": "/api/memos/:id" },
