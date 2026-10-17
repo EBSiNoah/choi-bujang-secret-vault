@@ -15,7 +15,9 @@
     { "method": "GET", "path": "/api/notes/:id" },
     { "method": "GET", "path": "/api/memos/:id" },
     { "method": "PUT", "path": "/api/memos/:id" },
-    { "method": "DELETE", "path": "/api/memos/:id" }
+    { "method": "DELETE", "path": "/api/memos/:id" },
+    { "method": "POST", "path": "/api/policies/restore" },
+    { "method": "POST", "path": "/api/memos/:id/restore" }
   ],
   "originalApiUrl": "https://lcvrjogmyryihpkdpidf.supabase.co/rest/v1/memos",
   "restoreRoute": [
