@@ -1,147 +1,117 @@
-import assert from 'node:assert/strict';
+// 10단계: 비공개 가상 메모 사본에서 "한 건만" 복원합니다.
+// rest 는 서버 전용 키로 Supabase REST 를 부르는 함수(ctx.rest)를 그대로 주입받습니다.
 import { createHash } from 'node:crypto';
-import { test } from 'node:test';
-import { exportJWK, generateKeyPair, SignJWT } from 'jose';
-import restoreHandler from '../api/memos/restore.js';
-import config from '../aleph.config.json' with { type: 'json' };
-import { RESOURCE_IDS } from '../src/resource-id.mjs';
 
-const ownerId = '33333333-3333-4333-8333-333333333333';
-const otherOwnerId = '22222222-2222-4222-8222-222222222222';
-const testMemoId = '00000000-0000-4000-8000-00000000b001';
-const otherMemoId = '44444444-4444-4444-8444-444444444444';
+export const BACKUP_TABLE = 'memo_backups';
+export const RESTORE_ROUTE = 'POST /api/memos/:id/restore';
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+const OWNER_FIELDS = ['owner_id', 'ownerId', 'user_id', 'userId'];
+const ALLOWED_KEYS = ['dryRun', 'confirmContentSha256'];
+const isUuid = (v) => typeof v === 'string' && UUID.test(v);
+const enc = encodeURIComponent;
 
-function hashContent(title, body) {
-  return createHash('sha256').update(JSON.stringify({ title, body }), 'utf8').digest('hex');
+// SQL 의 public.memo_content_sha256(title, body) 와 같은 값이어야 합니다.
+export function contentHash(title, body) {
+  return createHash('sha256')
+    .update(`${Buffer.byteLength(title, 'utf8')}:${title}${body}`, 'utf8')
+    .digest('hex');
 }
 
-function mockResponse() {
-  const headers = new Map();
-  return {
-    headers,
-    statusCode: undefined,
-    body: undefined,
-    setHeader(name, value) {
-      headers.set(name.toLowerCase(), value);
-    },
-    status(statusCode) {
-      this.statusCode = statusCode;
-      return this;
-    },
-    json(body) {
-      this.body = body;
-      return this;
-    },
-  };
-}
+export async function restoreMemo({ rest, userId, id, body, target, audit = () => {} }) {
+  const memoId = typeof id === 'string' ? id.toLowerCase() : id;
+  const user = typeof userId === 'string' ? userId.toLowerCase() : userId;
+  const log = (outcome, extra = {}) =>
+    audit({ at: new Date().toISOString(), outcome, memoId, ownerId: user, ...extra });
+  const out = (status, json, outcome, extra) => { log(outcome, { status, ...extra }); return { status, json }; };
 
-test('restores only test account B memo after verifying snapshot id, owner, and content hash', async () => {
-  const { publicKey, privateKey } = await generateKeyPair('ES256');
-  const jwk = await exportJWK(publicKey);
-  jwk.kid = 'memo-restore-test-key';
-  jwk.alg = 'ES256';
-  jwk.use = 'sig';
-  const now = Math.floor(Date.now() / 1000);
-  const token = await new SignJWT({
-    aleph_run: '11111111-1111-4111-8111-111111111111',
-    aleph_role: 'judge',
-    aleph_identity: 'b',
-  })
-    .setProtectedHeader({ alg: 'ES256', kid: jwk.kid })
-    .setIssuer(config.judgeIssuer)
-    .setAudience(new URL(config.publicAppUrl).hostname)
-    .setSubject(ownerId)
-    .setIssuedAt(now)
-    .setExpirationTime(now + 600)
-    .sign(privateKey);
-
-  const snapshot = {
-    id: testMemoId,
-    owner_id: ownerId,
-    title: 'Virtual backup title',
-    body: 'virtual-backup-body',
-    contentSha256: hashContent('Virtual backup title', 'virtual-backup-body'),
-  };
-  const memos = new Map([
-    [testMemoId, { id: testMemoId, owner_id: ownerId, title: 'Changed title', body: 'changed-body' }],
-    [otherMemoId, { id: otherMemoId, owner_id: otherOwnerId, title: 'Unrelated memo', body: 'keep-unchanged' }],
-  ]);
-  const auditHistory = [{ id: 'audit-virtual-1', action: 'prior-test-event' }];
-  const originalFetch = globalThis.fetch;
-  const originalSupabaseUrl = process.env.SUPABASE_URL;
-  const originalSecretKey = process.env.SUPABASE_SECRET_KEY;
-  const writes = [];
-  process.env.SUPABASE_URL = 'https://memo-restore-test.supabase.co';
-  process.env.SUPABASE_SECRET_KEY = 'test-only-placeholder-secret';
-  globalThis.fetch = async (input, init = {}) => {
-    const url = new URL(String(input));
-    if (url.pathname.endsWith('/.well-known/jwks.json')) {
-      return new Response(JSON.stringify({ keys: [jwk] }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
-    }
-    assert.equal(url.pathname, '/rest/v1/memos');
-    assert.equal(url.searchParams.get('id'), `eq.${testMemoId}`);
-    assert.equal(url.searchParams.get('owner_id'), `eq.${ownerId}`);
-    const memo = memos.get(testMemoId);
-    if (init.method === 'PATCH') {
-      const patch = JSON.parse(init.body);
-      writes.push({ url: url.toString(), patch });
-      assert.deepEqual(Object.keys(patch).sort(), ['body', 'title']);
-      Object.assign(memo, patch);
-    }
-    return new Response(JSON.stringify([memo]), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    });
-  };
-
-  const request = (body) => ({
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${token}`,
-      'x-resource-id': RESOURCE_IDS.personalMemos,
-    },
-    body,
-  });
-
-  try {
-    const response = mockResponse();
-    await restoreHandler(request({ snapshot }), response);
-    assert.equal(response.statusCode, 200);
-    assert.deepEqual(response.body, {
-      id: snapshot.id,
-      owner_id: snapshot.owner_id,
-      contentSha256: snapshot.contentSha256,
-    });
-    assert.equal(memos.get(testMemoId).id, snapshot.id);
-    assert.equal(memos.get(testMemoId).owner_id, snapshot.owner_id);
-    assert.equal(hashContent(memos.get(testMemoId).title, memos.get(testMemoId).body), snapshot.contentSha256);
-    assert.deepEqual(memos.get(otherMemoId), {
-      id: otherMemoId,
-      owner_id: otherOwnerId,
-      title: 'Unrelated memo',
-      body: 'keep-unchanged',
-    });
-    assert.deepEqual(auditHistory, [{ id: 'audit-virtual-1', action: 'prior-test-event' }]);
-    assert.equal(writes.length, 1);
-
-    for (const invalidSnapshot of [
-      { ...snapshot, id: otherMemoId },
-      { ...snapshot, owner_id: otherOwnerId },
-      { ...snapshot, contentSha256: '0'.repeat(64) },
-    ]) {
-      const invalidResponse = mockResponse();
-      await restoreHandler(request({ snapshot: invalidSnapshot }), invalidResponse);
-      assert.equal(invalidResponse.statusCode, 400);
-    }
-    assert.equal(writes.length, 1);
-  } finally {
-    globalThis.fetch = originalFetch;
-    if (originalSupabaseUrl === undefined) delete process.env.SUPABASE_URL;
-    else process.env.SUPABASE_URL = originalSupabaseUrl;
-    if (originalSecretKey === undefined) delete process.env.SUPABASE_SECRET_KEY;
-    else process.env.SUPABASE_SECRET_KEY = originalSecretKey;
+  if (!isUuid(target?.memoId) || !isUuid(target?.ownerId)) {
+    return out(503, { error: 'RESTORE_NOT_CONFIGURED' }, 'not_configured');
   }
-});
+  // 복원 대상 한 건, 시험 계정 B 만. 그 밖은 없는 것과 똑같이 404.
+  if (memoId !== target.memoId.toLowerCase() || user !== target.ownerId.toLowerCase()) {
+    return out(404, { error: 'NOT_FOUND' }, 'not_target');
+  }
+
+  const req = body ?? {};
+  if (typeof req !== 'object' || Array.isArray(req)) {
+    return out(400, { error: 'INVALID_RESTORE_REQUEST' }, 'bad_body');
+  }
+  if (OWNER_FIELDS.some((k) => Object.hasOwn(req, k))) {
+    return out(403, { error: 'OWNER_CHANGE_FORBIDDEN' }, 'owner_field');
+  }
+  if (Object.keys(req).some((k) => !ALLOWED_KEYS.includes(k))
+      || (Object.hasOwn(req, 'dryRun') && typeof req.dryRun !== 'boolean')) {
+    return out(400, { error: 'INVALID_RESTORE_REQUEST' }, 'bad_body');
+  }
+  const dryRun = req.dryRun === true;
+  if (!dryRun && typeof req.confirmContentSha256 !== 'string') {
+    return out(400, { error: 'CONFIRMATION_REQUIRED',
+      hint: 'dryRun:true 로 복원할 버전과 변경 범위를 먼저 확인한 뒤, 그 contentSha256 을 confirmContentSha256 로 보내세요.' },
+    'confirmation_required');
+  }
+
+  // 1) 사본에서 이 메모 한 건만 읽습니다 (ID + 소유자 조건).
+  const b = await rest(`${BACKUP_TABLE}?select=memo_id,owner_id,title,body,content_sha256&memo_id=eq.${enc(memoId)}&owner_id=eq.${enc(user)}`);
+  if (!b.ok) return out(502, { error: 'MEMOS_SERVICE_UNAVAILABLE' }, 'backup_read_failed');
+  const brows = await b.json();
+  const backup = Array.isArray(brows)
+    ? brows.find((r) => r?.memo_id === memoId && r?.owner_id === user) : undefined;
+  if (!backup) return out(404, { error: 'BACKUP_NOT_FOUND' }, 'backup_not_found');
+  if (typeof backup.title !== 'string' || typeof backup.body !== 'string'
+      || typeof backup.content_sha256 !== 'string') {
+    return out(502, { error: 'BACKUP_INVALID' }, 'backup_invalid');
+  }
+  // 2) 사본의 내용 해시가 기록된 해시와 같아야 합니다.
+  const backupHash = contentHash(backup.title, backup.body);
+  if (backupHash !== backup.content_sha256) {
+    return out(409, { error: 'BACKUP_HASH_MISMATCH' }, 'backup_hash_mismatch', { backupHash });
+  }
+
+  // 3) 지금 메모 상태. ID 로만 찾고 다른 사람 소유면 건드리지 않습니다.
+  const l = await rest(`memos?select=id,owner_id,title,body&id=eq.${enc(memoId)}`);
+  if (!l.ok) return out(502, { error: 'MEMOS_SERVICE_UNAVAILABLE' }, 'live_read_failed');
+  const lrows = await l.json();
+  const live = Array.isArray(lrows) ? lrows.find((r) => r?.id === memoId) : undefined;
+  if (live && live.owner_id !== user) {
+    return out(404, { error: 'NOT_FOUND' }, 'owner_conflict', { backupHash });
+  }
+  const beforeHash = live && typeof live.title === 'string' && typeof live.body === 'string'
+    ? contentHash(live.title, live.body) : null;
+  const action = live ? 'update' : 'insert';
+  const plan = {
+    restoreVersion: { id: memoId, ownerId: user, contentSha256: backupHash },
+    scope: { service: 'memos', route: RESTORE_ROUTE, memosAffected: 1, action,
+      otherMemosTouched: 0, auditLog: 'append_only' },
+    current: { exists: Boolean(live), contentSha256: beforeHash },
+  };
+
+  if (dryRun) return out(200, { dryRun: true, ...plan }, 'dry_run', { backupHash, beforeHash });
+
+  // 4) 실행 전 확인: 보여 준 버전의 해시를 그대로 되돌려 보내야 합니다.
+  if (req.confirmContentSha256 !== backupHash) {
+    return out(409, { error: 'CONFIRMATION_MISMATCH' }, 'confirmation_mismatch', { backupHash, beforeHash });
+  }
+  if (beforeHash === backupHash) {
+    return out(200, { restored: false, reason: 'already_matches', ...plan }, 'already_matches', { backupHash, beforeHash });
+  }
+
+  // 5) 이 한 건만 씁니다. 삭제·전체 덮어쓰기·감사 기록 수정은 없습니다.
+  const headers = { 'Content-Type': 'application/json', Prefer: 'return=representation' };
+  const w = live
+    ? await rest(`memos?select=id,owner_id,title,body&id=eq.${enc(memoId)}&owner_id=eq.${enc(user)}`,
+      { method: 'PATCH', headers, body: JSON.stringify({ title: backup.title, body: backup.body }) })
+    : await rest('memos?select=id,owner_id,title,body',
+      { method: 'POST', headers, body: JSON.stringify({ id: memoId, owner_id: user, title: backup.title, body: backup.body }) });
+  if (!w.ok) return out(502, { error: 'MEMOS_SERVICE_UNAVAILABLE' }, 'write_failed', { backupHash, beforeHash });
+
+  // 6) 쓴 뒤 다시 대조: ID·소유자·내용 해시가 사본과 같아야 성공입니다.
+  const wrows = await w.json();
+  const after = Array.isArray(wrows) ? wrows.find((r) => r?.id === memoId) : undefined;
+  const afterHash = after && typeof after.title === 'string' && typeof after.body === 'string'
+    ? contentHash(after.title, after.body) : null;
+  if (!after || after.owner_id !== user || afterHash !== backupHash) {
+    return out(502, { error: 'RESTORE_VERIFY_FAILED' }, 'verify_failed', { backupHash, beforeHash, afterHash });
+  }
+  return out(200, { restored: true, matchesBackup: true, ...plan, current: { exists: true, contentSha256: afterHash } },
+    'restored', { backupHash, beforeHash, afterHash });
+}
