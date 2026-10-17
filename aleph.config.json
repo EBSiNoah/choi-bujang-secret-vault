@@ -1,5 +1,5 @@
 {
-  "step": 10,
+  "step": 9,
   "repoUrl": "https://github.com/EBSiNoah/choi-bujang-secret-vault.git",
   "publicAppUrl": "https://choi-bujang-secret-vault-gold.vercel.app",
   "judgeIssuer": "https://aleph-judge-production.up.railway.app/defense/judge",
@@ -18,9 +18,5 @@
     { "method": "DELETE", "path": "/api/memos/:id" }
   ],
   "originalApiUrl": "https://lcvrjogmyryihpkdpidf.supabase.co/rest/v1/memos",
-  "restoreRoute": [
-    { "method": "POST", "path": "/api/policies/restore" },
-    { "method": "POST", "path": "/api/memos/restore" },
-    { "method": "POST", "path": "/api/notes/restore" }
-  ]
+  "restoreRoute": null
 }

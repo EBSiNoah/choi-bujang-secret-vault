@@ -1,7 +1,6 @@
 export const RESOURCE_IDS = Object.freeze({
   instructorAnnouncements: 'instructor-announcements-v1',
   personalMemos: 'personal-memos-v1',
-  testPolicyRestore: 'test-policy-restore-v1',
 });
 
 export function requireResourceId(request, response, expectedResourceId) {

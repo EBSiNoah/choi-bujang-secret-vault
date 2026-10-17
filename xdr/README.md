@@ -39,14 +39,6 @@ fixture 재생의 규칙 추가와 정상 주소 통과 여부는 `node --test t
 
 웹 주입 경보는 `xdr/web-injection/respond.mjs`의 `createResponder({ ztna })`로 같은 방식으로 연결합니다. 기본적으로 사설·공유 주소, 허용 목록 주소, 근거 경보 번호가 없는 후보는 거부 규칙으로 넣지 않습니다. 격리된 fixture 시험은 `node --test test/xdr-web-injection-respond.test.mjs`로 실행합니다.
 
-## 검증된 사본으로 시험 정책 복원 미리보기
-
-`src/policy-restore.mjs`의 `restoreTestPolicy`는 침해 시각보다 앞선 버전의 정책 사본을 검증한 뒤, `restorePaths`에 명시한 경로만 현재 시험 정책과 비교합니다. 변경 경로와 변경 내용은 실행 전에 `presentPreview`로 보여 줍니다. 사본이 없거나 검증에 실패하면 시험 정책을 읽거나 변경하지 않고 중단합니다. 미리보기에는 사본 버전, 변경 범위(`scope`), 경로별 추가·삭제·교체 내용이 포함되며 전체 정책은 표시하지 않습니다.
-
-실제 쓰기는 `environment: "test"`인 정책 저장소에만 허용하고, 미리보기 표시 후 별도의 명시적 승인이 있어야 합니다. 복원은 현재 정책을 기준으로 지정 경로만 덮어쓰므로 나머지 서비스 정책·규칙과 감사 이력은 그대로 보존합니다. `services`, `serviceRules`, `audit`, `auditHistory`, `auditLog` 경로는 복원 대상으로 지정할 수 없습니다. 승인 전에 시험 정책이 바뀌면 오래된 미리보기로 진행하지 않고 중단합니다. 운영 정책용 어댑터는 이 기능에 전달하지 않습니다. 호출자는 사본의 서명·무결성을 검사하는 `verifySnapshot`, 변경 내용을 보여주는 `presentPreview`, 승인 의사를 확인하는 `confirmRestore`를 제공해야 합니다.
-
-격리된 로컬 시험은 `node --test test/policy-restore.test.mjs`로 실행합니다. 이 시험은 실제 정책 저장소나 운영 정책을 연결하지 않습니다.
-
 ## 실행
 
 저장소 루트에서 항목 키 하나를 넣습니다.

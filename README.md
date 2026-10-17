@@ -129,30 +129,6 @@ API 구현 경로 전체와 판정기 허용 경로는 다릅니다. `allowedRou
 `GET /api/memos/:id`	`{id,title,body}`, 남의 메모는 `404`	`401`
 `PUT /api/memos/:id`	`{title,body}` → `{id,title,body}`, 남의 메모 `404`, `owner_id` 포함 시 `403`	`401`
 `DELETE /api/memos/:id`	`204`, 남의 메모는 `404`	`401`
-`POST /api/memos/restore`	시험 계정 B의 지정 메모 한 건을 검증된 사본으로 복원 → `{id,owner_id,contentSha256}`	`401`
-`POST /api/notes/restore`	강사가 허용된 공용 가상 공지 한 건을 복원 → `{id,owner_id,contentSha256}`	`401`
-`POST /api/policies/restore`	시험 정책 사본 미리보기 및 확인 후 지정 범위 복원	`401`
-
-공지 복원 서비스·경로
-- 서비스: `instructor-announcements-v1`; 경로: `POST /api/notes/restore`. 경로는 `aleph.config.json`의 `restoreRoute`에 선언되어 있으며, 판정기 `allowedRoutes`와는 별도입니다. `X-Resource-ID: instructor-announcements-v1`와 로그인한 강사 권한이 필요합니다.
-- 요청 본문은 `{snapshot:{id,owner_id,title,content,contentSha256}}`입니다. 서버는 seed에 있는 네 개의 고정 공지 ID만 허용하고 `owner_id`가 `null`인지 확인합니다. `contentSha256`은 UTF-8 `JSON.stringify({title,content})`의 SHA-256과 일치해야 합니다. API는 동일한 ID와 공용 소유자 조건으로 해당 공지의 `title`, `content`만 갱신하고, 응답의 ID·소유자·내용 해시를 재확인합니다. 다른 공지와 감사 이력은 갱신하지 않습니다.
-- 이 API는 사본 발급자의 서명이나 출처를 검증하지 않습니다. 내용 해시는 제공된 제목·내용의 일관성만 확인하므로, 이를 신뢰된 사본 증명으로 간주하지 마세요. 정상은 `200`, 잘못된 사본은 `400`, 로그인한 사용자가 강사가 아니면 `403`, 대상 공지가 없으면 `404`, 저장소 오류나 갱신 결과 검증 실패는 `502`입니다.
-- 로컬 재실행: 저장소 루트에서 `node --test test/notes-restore.test.mjs test/resource-authorization.test.mjs test/instructors.test.mjs`를 실행합니다. 가짜 인증·DB만 사용하며 실제 DB·배포 복원 결과는 아닙니다.
-
-메모 복원 서비스·경로
-- 서비스: `personal-memos-v1`; 경로: `POST /api/memos/restore`.
-- B 계정 로그인으로 발급된 `Authorization`과 `X-Resource-ID: personal-memos-v1` 헤더가 필요합니다. 요청 본문은 `{snapshot:{id,owner_id,title,body,contentSha256}}`입니다. 서버는 검증된 로그인 소유자와 사본 `owner_id`, 시험 계정 B의 고정 시험 메모 ID를 대조하고, `contentSha256`이 UTF-8 `JSON.stringify({title,body})`의 SHA-256과 일치하는지 확인합니다.
-- 서버가 같은 ID·소유자의 현재 행을 조회한 뒤 그 행의 `title`, `body`만 갱신하고, 반환된 ID·소유자·내용 해시를 다시 검사합니다. 다른 메모는 갱신하지 않으며 감사 이력을 쓰거나 수정하지 않습니다. 사본 내용은 오류 응답이나 로그에 포함하지 않습니다.
-- 정상은 `200`과 사본의 ID·소유자·내용 해시입니다. 누락·불일치 사본은 `400`, 해당 소유자의 시험 메모가 없으면 `404`, 서비스 오류나 갱신 결과 검증 실패는 `502`입니다. 이 API는 사본의 발급 출처를 서명으로 증명하지 않고, 로그인한 소유자에게 제한된 시험 복원 및 해시 일치만 확인합니다.
-- 로컬 재실행: 저장소 루트 터미널에서 `node --test test/memo-restore.test.mjs` 실행. 가짜 인증·DB로 시험 계정 B의 고정 시험 메모만 복원하고, 다른 메모와 감사 이력이 그대로인지 확인합니다. 실제 계정·DB·배포에서 실행한 결과는 아닙니다.
-
-정책 복원 서비스·경로
-- 서비스: `test-policy-restore-v1`; 경로: `POST /api/policies/restore`. 현재 [`aleph.config.json`](./aleph.config.json)의 `restoreRoute`에는 정책 복원 경로, 시험 메모 복원 `POST /api/memos/restore`, 공지 복원 `POST /api/notes/restore`가 선언돼 있습니다. 메모·공지 복원은 정책 복원과 별개입니다.
-- Supabase의 `test_policy_snapshots`와 `test_policy_state`는 정책 시험 전용 저장소입니다. 스키마는 [`supabase/migrations/20261016000100_create_test_policy_restore.sql`](./supabase/migrations/20261016000100_create_test_policy_restore.sql)에 있고, 서버는 `test_policy_state`의 `singleton` 행만 갱신합니다. 이 테이블은 운영 판정기 정책과 별도이며, 운영 정책을 바꾸지 않습니다. 복구를 사용하려면 관리자가 시험 정책 singleton과 침해 전 사본을 별도 준비해야 합니다. 사본이 없으면 `404`로 중단합니다.
-- 사본 서명은 서버 전용 `POLICY_SNAPSHOT_HMAC_KEY` 환경 변수(최소 32 UTF-8 바이트)로 검증합니다. 이 값은 공식 호스팅 환경의 비밀 입력란에 직접 설정하고 코드·Git·요청·로그에 넣지 않습니다. 사본의 서명은 HMAC-SHA256이며, 서명 대상은 canonical JSON의 `{version,createdAt,intrusionAt,policy}`입니다. 시각은 UTC ISO 형식이며 저장 후 밀리초 단위 UTC ISO로 정규화해 서명합니다. 확인 요청 때 저장소에서 사본을 다시 읽고 서명을 다시 검증합니다. 사본 생성·서명 작업은 이 API에 포함되지 않으며, 사전 침해 시점에 신뢰된 관리 절차로 준비되어야 합니다.
-- 호출은 인증된 POST, 허용된 `POLICY_RESTORE_OPERATOR_ID` 계정, `X-Resource-ID: test-policy-restore-v1`을 요구합니다. `POLICY_RESTORE_OPERATOR_ID`는 공식 호스팅 설정에 복원 권한이 있는 시험 운영자의 인증 사용자 UUID로 지정합니다. 먼저 `{action:"preview",version,restorePaths}`를 POST하면 사본 버전·변경 경로·전후 차이와 5분 유효 확인 토큰을 반환합니다. 변경 범위와 버전을 검토한 뒤에만 `{action:"confirm",confirmationToken}`을 별도 POST합니다. 확인 단계에서도 사본을 다시 읽고 검증하며, 미리보기 뒤 정책이 변경됐으면 거부합니다. 시험 정책 revision 조건부 갱신으로 동시 변경을 덮어쓰지 않습니다. `services`, `serviceRules`/`service_rules`, `audit`, `auditHistory`/`audit_history`, `auditLog`/`audit_log` 경로는 복원 범위에서 거부하며 다른 시험 정책 필드와 기존 감사 기록은 보존합니다.
-- 경로·범위 오류는 `400`, 사본 검증 실패나 미리보기 만료/변경은 `409`, 사본 없음은 `404`, 시험 저장소 장애는 `502`입니다. 로컬 가짜 DB 확인은 `node --test test/policy-restore.test.mjs test/policy-restore-api.test.mjs`로 실행합니다. 실제 Supabase migration 적용, 시험 데이터 준비, 키 설정, 배포 호출은 이 문서 수정 중 실행하지 않았으므로 **미실행**입니다.
-
 확인 상태
 확인함 (로컬, 가짜 DB·가짜 인증 서버): 4단계 A/B 시나리오 13개, `deployment-identity.mjs` 검사 8개와 `allowedRoutes` 7개, `api/login.js` 7개가 모두 통과했습니다. 화면 코드에 `sb_publishable`, `eyJ`, `supabase` 문자열이 남아 있지 않은 것도 확인했습니다.
 미확인: 실제 Supabase·Vercel 배포 환경에서의 동작, 심판의 5단계 판정(`S05_ORIGINAL_URL_MISSING` 재확인)은 아직 기록하지 않았습니다.
@@ -191,31 +167,3 @@ npm run decider:test
 저장소 루트에서 `npm run fixture:7 && npm run decider:test`를 실행해 가상 사건을 연습합니다. 정상 요청은 `allow`, 평소와 다른 시각·네트워크와 다량 읽기가 겹친 가상 사건은 `step_up`이어야 합니다. 미등록 기기는 계속 `deny`이며, 확인 완료로 표시된 가상 재요청은 `allow`입니다.
 
 현재 엔진 계약에는 같은 로그인으로 다시 인증했는지 증명하는 정보가 없습니다. 실제 자료의 사전 차단과 새 로그인 뒤 재판정은 미구현·미실행이며, 위 명령은 가상 요청 연습이지 실제 접속이나 심판 판정 증거가 아닙니다.
-
-## 복구 뒤 1~9단계 재확인 순서
-
-아래는 복구 후에 실행할 순서와 기대 결과입니다. 이 문서를 갱신하면서 재복구, 배포, 계정 요청, 아래 시험은 실행하지 않았습니다. 따라서 아래 확인 상태는 **미실행**이며, 기대 결과를 실제 결과로 기록하지 마세요. 각 항목을 직접 확인한 뒤 날짜, 대상 배포/커밋, 실제 상태 코드 또는 명령 출력을 별도로 기록합니다. 가상 계정·가상 메모만 사용하고 비밀번호·토큰·메모 본문은 기록하지 않습니다.
-
-### 0. 복구 결과 확인 — 이후 시험의 선행 조건
-
-1. 복원 직전에 침해 전 안전 정책 사본을 저장소에서 다시 읽고 서명·무결성 검증을 수행합니다. 사본이 없거나 검증에 실패하면 현재 정책을 읽거나 복원하지 말고 즉시 중단합니다. 검증 성공 후 복원할 사본의 버전과 변경될 경로·항목 범위를 실행 전에 미리보기로 표시하고, 확인·승인을 받은 경우에만 시험 정책에 적용합니다. 복원 대상으로 고르지 않은 서비스 규칙과 감사 이력은 보존됐는지 대조합니다. 정책 API는 `test_policy_state` 시험 테이블에만 연결되며 운영 판정기 정책을 바꾸지 않습니다. 브라우저 버튼은 없고 API의 미리보기 응답을 확인한 뒤 별도의 확인 요청을 보내야 합니다. Migration, 사전 사본, HMAC 키, 허용 운영자 ID가 준비되지 않았다면 호출하지 말고 중단합니다.
-2. 시험 계정 B로 로그인한 상태에서 `personal-memos-v1`의 `POST /api/memos/restore`를 호출합니다. 사본은 지정된 B 시험 메모 ID, 로그인한 B의 `owner_id`, `title`, `body`, `contentSha256`을 포함해야 합니다. 본문 해시는 UTF-8 `JSON.stringify({title,body})`의 SHA-256 값입니다. API가 반환한 ID·소유자·해시가 사본과 모두 같을 때만 복구 대상 한 건의 확인을 기록합니다. 응답이 `400`, `404`, `502`이거나 값이 다르면 멈추고, 다른 계정/메모를 대상으로 재시도하지 않습니다. 이 경로는 사본 발급자의 서명을 확인하지 않으므로, 자체 내용 해시만으로 사본 출처까지 검증됐다고 간주하지 않습니다.
-3. 복구가 확인된 후 아래 순서대로 정상 요청과 금지 요청을 각각 실행합니다. 상태 코드는 현재 API 계약이 정한 기대값이며, 실제 배포 응답과 일치한 경우에만 결과를 기록합니다.
-
-| 단계 | 정상 요청 — 기대 | 금지 요청 — 기대 | 확인 방법 / 경계 |
-|---|---|---|---|
-| 1. 공개 시작 화면 | `/`에서 공개 가능한 가상 화면을 확인 | 복구된 개인 메모·실제 자료가 공개 정적 파일이나 `/data.json`에서 보이면 안 됨 | 화면 및 `/data.json`을 열어 확인합니다. 시작 시점의 공개 가상 자료 동작을 재현하려고 실제 자료를 공개하지 않습니다. |
-| 2. 정적 자료 분리 | 로그인 후 서버 경로에서 권한이 있는 가상 자료를 확인 | 비로그인 `/api/notes` 요청은 `401`; 공개 `/data.json`에는 개인 메모가 없어야 함 | 비로그인 브라우저/시크릿 창에서 확인합니다. 현재 `public/data.json` 빌드 복사는 꺼져 있으므로 공개 데이터가 있다고 가정하지 않습니다. |
-| 3. 로그인 | 시험 계정으로 화면에서 로그인하고 자료실 진입 | 로그아웃/시크릿 창에서 보호 API는 `401`; 틀린 인증 정보는 로그인 실패 | [public/index.html](./public/index.html)의 로그인 화면을 사용합니다. 비밀번호나 토큰을 문서·로그·화면 캡처에 남기지 않습니다. |
-| 4. 소유자 검사 | A는 A 메모를, B는 복구된 B 메모를 조회 (`200`) | A가 B 메모를 조회·수정·삭제하면 `404`; 수정 본문에 소유자 필드를 넣으면 `403` | A/B 각각 로그인해 시험합니다. 복구 대상 B 메모는 수정·삭제하지 말고, 변경 시험은 별도 가상 메모를 사용합니다. |
-| 5. 서버 API 경유 | 로그인한 사용자 요청이 `/api/notes` 또는 `/api/memos`에서 허가 범위로 처리 | 로그인 없는 API 접근은 `401`; 브라우저가 Supabase 직접 주소/비밀 키로 접근하지 않아야 함 | 브라우저 Network 패널에서 호출 경로를 확인합니다. `aleph.json`의 `originalApiUrl`·`allowedRoutes`도 기록합니다. 실제 DB의 `training_notes` RLS 상태와 직접 우회 거부는 별도 확인 전까지 미실행입니다. |
-| 6. 등록 기기 정책 | 등록 기기의 정상 가상 요청은 `allow` | 미등록 기기 가상 요청은 `deny` / `device_not_registered` | `npm run decider:test`. 로컬 연습이며 실제 기기 등록·운영 접속 확인이 아닙니다. |
-| 7. 추가 확인 정책 | 정상 요청은 `allow`; 확인 완료된 가상 재요청은 `allow` | 계약에 맞는 복합 이상 접속은 `step_up` | `npm run fixture:7 && npm run decider:test`. 실제 재로그인 연계와 실제 자료 사전 차단은 미구현·미실행입니다. |
-| 8. 해당 단계 정책 | 단계 원고와 운영 계약이 지정한 정상 요청 | 같은 계약이 지정한 금지 요청 | 이 저장소 문서에서 8단계의 요청·응답 계약을 확인할 수 없습니다. 임의의 정상/금지 사례나 통과 결과를 만들지 말고, 단계 원고와 심판 계약을 확보할 때까지 미실행으로 둡니다. |
-| 9. 조회 폭주 탐지 | 같은 사용자의 정상 조회 30건 또는 10분 안의 120건 이하는 `observe` | 10분 안에 같은 사용자의 GET 121건 이상은 `propose_revocation` | `npm run detect:test`. 가상 사건 연습일 뿐 운영 엔진 사건 연결, 실제 접속 회수, 심판 판정은 확인하지 않습니다. |
-
-### 시험 실행 및 기록
-
-- 로컬 재현 명령은 필요한 경우 각각 실행합니다: `node --test test/memo-restore.test.mjs`, `node --test test/policy-restore.test.mjs test/resource-authorization.test.mjs`, `npm run decider:test`, `npm run fixture:7 && npm run decider:test`, `npm run detect:test`. 서로 다른 명령은 각각의 출력과 종료 코드를 기록합니다. 이 명령을 아직 실행하지 않았다면 결과는 **미실행**입니다.
-- 로컬 테스트는 가짜 인증/DB 또는 가상 요청 연습입니다. 실제 배포 확인을 대신하지 않습니다. 배포 검증은 복구 대상 시험 계정으로 위 표의 정상·금지 요청을 모두 별도 실행하고, 실제 HTTP 상태·정책 버전·날짜를 기록해야 합니다.
-- 기록 양식: `단계 | 실행일 | 배포 커밋 | 정상 요청 결과 | 금지 요청 결과 | 근거 | 상태(통과/실패/미실행)`. 응답 본문, 개인 자료, 인증 정보는 근거에 복사하지 않습니다. 실행 전 상태는 모두 **미실행**으로 유지합니다.
