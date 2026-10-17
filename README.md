@@ -176,14 +176,14 @@ npm run decider:test
 소유자(시험 계정 B) ID	`⟨시험 계정 B의 사용자 ID를 채우세요⟩`
 사본의 내용 해시 (SHA-256)	`⟨dryRun 응답의 contentSha256을 채우세요⟩`
 서비스	`memos`
-복원 경로	`POST /api/memos/:id/restore`
+복원 경로	`POST /api`
 안전 정책 사본 버전 해시	`⟨snapshot --yes 출력의 버전 해시를 채우세요⟩`
-정책 복원 경로 (`aleph.config.json`의 `restoreRoute`)	`POST /api/policies/restore` — `restoreRoute`는 이 경로를 담은 배열이고, `api/policies/restore.js`가 배열에서 찾습니다. 복원 대상은 시험 정책(`test_policy_state`)뿐입니다
+정책 복원 경로 (`aleph.config.json`의 `restoreRoute`)	`POST /api` — `restoreRoute`는 이 경로를 담은 배열이고, `api`가 배열에서 찾습니다. 복원 대상은 시험 정책(`test_policy_state`)뿐입니다
 사본	비공개 테이블 `public.memo_backups` (브라우저 접근 불가, 서버 전용 키로만 읽음)
 위 ID 두 개는 `src/restore-target.mjs`의 값과 같아야 합니다. 비어 있으면 복원 경로는 503으로 닫혀 있습니다.
 실제 학생 자료, 토큰, 비밀키는 넣지 않습니다.
 정책 복원 전 확인 (사본 검증 · 실패 시 중단 · 변경 범위)
-`POST /api/policies/restore`는 시험 정책만 복원합니다. 이 경로가 읽고 쓰는 곳은 Supabase의 `test_policy_snapshots`(안전 정책 사본)와 `test_policy_state`(시험 정책, 한 행)이고, 쓰기는 `test_policy_state`의 그 한 행뿐입니다. 복원은 두 단계(`preview` → `confirm`)이며, `preview`가 복원할 사본의 버전과 바뀔 항목을 먼저 보여 줍니다.
+`POST /api`는 시험 정책만 복원합니다. 이 경로가 읽고 쓰는 곳은 Supabase의 `test_policy_snapshots`(안전 정책 사본)와 `test_policy_state`(시험 정책, 한 행)이고, 쓰기는 `test_policy_state`의 그 한 행뿐입니다. 복원은 두 단계(`preview` → `confirm`)이며, `preview`가 복원할 사본의 버전과 바뀔 항목을 먼저 보여 줍니다.
 호출할 수 있는 사람: 로그인한 사용자 ID가 서버 환경변수 `POLICY_RESTORE_OPERATOR_ID`와 같은 운영자 한 명뿐입니다. 다르면 403 `POLICY_RESTORE_FORBIDDEN`입니다. `POLICY_SNAPSHOT_HMAC_KEY`(32바이트 이상)도 서버 환경변수로 필요하며, 두 값은 README, 코드, Git에 적지 않습니다.
 `preview` 요청
 ```
@@ -245,13 +245,13 @@ rm -rf .policy-guard/sim
 `node scripts/policy-guard.mjs verify` 가 통과하고, 마지막 `참고:` 줄이 실제 정책 파일의 사본과의 차이를 보여 줌
 `git status` 에 정책 파일 변경이 없음 (정책 변경은 별도 커밋으로만)
 `node scripts/policy-guard.mjs diff` 는 시험용 사본이 없으므로 `시험용 사본이 없습니다`로 멈춤 (정상)
-아래 표의 P-1~P-4는 로컬 도구(policy-guard), P-5~P-9는 서버 경로(`POST /api/policies/restore`) 확인입니다.
+아래 표의 P-1~P-4는 로컬 도구(policy-guard), P-5~P-9는 서버 경로(`POST /api`) 확인입니다.
 #	확인	결과
 P-1	사본 검증(`verify`) 통과, 버전 해시를 기록과 대조	미실행
 P-2	바뀔 항목(`diff`)이 예상한 범위뿐	미실행
 P-3	사본이 없거나 해시가 틀리면 멈추는지 (일부러 확인)	미실행
 P-4	시험 사본 폐기 뒤 `verify` 통과, `git status` 정책 파일 변경 없음	미실행
-P-5	`restoreRoute`가 배열이고 `api/policies/restore.js`가 설정 오류로 멈추지 않음 (`node --test test/policy-restore-route.test.mjs`)	미실행
+P-5	`restoreRoute`가 배열이고 `api`가 설정 오류로 멈추지 않음 (`node --test test/policy-restore-route.test.mjs`)	미실행
 P-6	운영자가 아닌 계정으로 호출 → 403 `POLICY_RESTORE_FORBIDDEN`	미실행
 P-7	`preview`: 사본 검증을 거쳐 변경 범위(`preview.changes`)와 확인 토큰이 나옴	미실행
 P-8	없는 `version` → 404, 서명이 맞지 않는 사본 → 409, 아무것도 쓰지 않음	미실행
