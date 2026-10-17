@@ -177,43 +177,44 @@ npm run decider:test
 사본의 내용 해시 (SHA-256)	`⟨dryRun 응답의 contentSha256을 채우세요⟩`
 서비스	`memos`
 복원 경로	`POST /api/memos/:id/restore`
-사본	비공개 테이블 `public.memo_backups` (브라우저 접근 불가, 서버 전용 키로만 읽음)
-위 ID 두 개는 `src/restore-target.mjs`의 값과 같아야 합니다. 비어 있으면 복원 경로는 503으로 닫혀 있습니다.
-실제 학생 자료, 토큰, 비밀키는 넣지 않습니다.
-복원 방법 (시험 계정 B로 로그인한 상태에서)
-먼저 `{ "dryRun": true }` 로 호출합니다. 복원할 버전(ID·소유자·내용 해시)과 변경 범위(1건, update 또는 insert, 다른 메모 0건)가 나옵니다. 아무것도 쓰지 않습니다.
-보인 내용이 맞으면 `{ "confirmContentSha256": "<위에서 본 해시>" }` 로 호출합니다. 해시가 다르면 409로 멈춥니다.
-성공 응답의 `matchesBackup: true` 를 확인합니다.
-지키는 것
-복원 대상 한 건의 ID·소유자·내용 해시가 사본과 같아야 합니다. 쓰기 전에 사본 해시를 다시 계산해 대조하고, 쓴 뒤에도 다시 읽어 대조합니다. 하나라도 다르면 실패로 답합니다.
-다른 메모는 읽지도 쓰지도 않습니다. 삭제나 전체 덮어쓰기는 없습니다.
-감사 기록은 수정하지 않습니다. 복원 시도마다 한 줄(JSON)을 덧붙이기만 하며, 메모 내용은 남기지 않고 ID와 해시만 남깁니다. Vercel에서는 파일에 덧붙일 수 없으므로 런타임 로그가 이 로그 파일 역할을 합니다.
-복원 경로는 정책 변경과 별도 커밋으로 허용합니다(`patches/restore-route-policy.patch`).
-확인 기록 (실제로 돌린 뒤 채우기)
-확인한 날짜:
-배포 커밋 SHA:
-dryRun 결과(ID·소유자·해시):
-복원 결과 `matchesBackup`:
-다른 메모가 그대로인지 확인한 방법:
-> 위 칸이 비어 있는 동안에는 "복원이 확인됐다"고 쓰지 않습니다.
-
-10단계: 백업에서 자료실을 되살립니다
-복원 대상 (가상 자료, 한 건)
-항목	값
-확인 계정	시험 계정 B
-복원 대상 메모 ID	`⟨시험 계정 B의 가상 메모 ID를 채우세요⟩`
-소유자(시험 계정 B) ID	`⟨시험 계정 B의 사용자 ID를 채우세요⟩`
-사본의 내용 해시 (SHA-256)	`⟨dryRun 응답의 contentSha256을 채우세요⟩`
-서비스	`memos`
-복원 경로	`POST /api/memos/:id/restore`
 안전 정책 사본 버전 해시	`⟨snapshot --yes 출력의 버전 해시를 채우세요⟩`
-정책 복원 경로 (`aleph.config.json`의 `restoreRoute`)	`POST /api/policies/restore` — 등록만 된 상태이며 이 경로를 처리하는 서버 코드는 아직 없습니다(미구현)
+정책 복원 경로 (`aleph.config.json`의 `restoreRoute`)	`POST /api/policies/restore` — `restoreRoute`는 이 경로를 담은 배열이고, `api/policies/restore.js`가 배열에서 찾습니다. 복원 대상은 시험 정책(`test_policy_state`)뿐입니다
 사본	비공개 테이블 `public.memo_backups` (브라우저 접근 불가, 서버 전용 키로만 읽음)
 위 ID 두 개는 `src/restore-target.mjs`의 값과 같아야 합니다. 비어 있으면 복원 경로는 503으로 닫혀 있습니다.
 실제 학생 자료, 토큰, 비밀키는 넣지 않습니다.
 정책 복원 전 확인 (사본 검증 · 실패 시 중단 · 변경 범위)
-`aleph.config.json`의 `restoreRoute`는 `POST /api/policies/restore`로 등록되어 있습니다. 다만 이 경로를 처리하는 서버 코드는 아직 만들지 않았으므로, 아래 절차는 같은 확인 순서를 로컬 도구(`scripts/policy-guard.mjs`)로 하는 것입니다.
-이 절차로 복원하는 것은 시험 정책(`.policy-guard/sim`)뿐입니다. 실제 운영 정책 파일(`src/decider.mjs`, `aleph.config.json`, `supabase/migrations/*.sql`)은 읽기만 하고 고치지 않습니다. 저장소 루트에서 실행합니다.
+`POST /api/policies/restore`는 시험 정책만 복원합니다. 이 경로가 읽고 쓰는 곳은 Supabase의 `test_policy_snapshots`(안전 정책 사본)와 `test_policy_state`(시험 정책, 한 행)이고, 쓰기는 `test_policy_state`의 그 한 행뿐입니다. 복원은 두 단계(`preview` → `confirm`)이며, `preview`가 복원할 사본의 버전과 바뀔 항목을 먼저 보여 줍니다.
+호출할 수 있는 사람: 로그인한 사용자 ID가 서버 환경변수 `POLICY_RESTORE_OPERATOR_ID`와 같은 운영자 한 명뿐입니다. 다르면 403 `POLICY_RESTORE_FORBIDDEN`입니다. `POLICY_SNAPSHOT_HMAC_KEY`(32바이트 이상)도 서버 환경변수로 필요하며, 두 값은 README, 코드, Git에 적지 않습니다.
+`preview` 요청
+```
+{ "action": "preview", "version": "<안전 정책 사본의 버전>", "restorePaths": [ ... ] }
+```
+`restorePaths` 규칙은 `src/policy-restore.mjs`를 따릅니다. 다른 키가 있으면 400 `INVALID_RESTORE_REQUEST`입니다. 서버는 아래 순서로 확인하고, 어느 한 곳에서 실패하면 그 자리에서 멈추며 아무것도 쓰지 않습니다.
+순서	확인	실패 시
+1	그 `version`의 안전 정책 사본이 있는가	404 `POLICY_SNAPSHOT_NOT_FOUND` (같은 버전이 둘 이상이면 502 `INVALID_POLICY_SNAPSHOT_RESPONSE`)
+2	사본의 서명(HMAC)이 맞는가	409 `POLICY_SNAPSHOT_UNVERIFIED`
+3	사본 만든 시각이 침공 시각보다 앞인가	409 `POLICY_SNAPSHOT_INVALID`
+4	시험 정책의 현재 상태를 읽을 수 있는가	502 `POLICY_TEST_STORE_UNAVAILABLE`
+5	복원 범위(`restorePaths`)가 올바른가	400 `INVALID_POLICY_RESTORE_SCOPE`
+통과하면 응답에 복원 전 변경 범위(`preview.changes`)가 담기고, 바뀔 항목이 있으면 5분 동안 유효한 `confirmationToken`이 함께 나옵니다. 바뀔 항목이 없으면 `applied:false`, `confirmationToken:null`이라서 복원할 것이 없습니다. 토큰은 호출한 운영자, 버전, 복원 범위, 시험 정책의 현재 상태에 묶여 있습니다.
+정책 복원 방법 (시험 정책만)
+위 `preview`로 사본의 버전과 `preview.changes`를 확인합니다. 바뀔 항목이 예상한 범위뿐인지 사람이 직접 봅니다. 예상 밖이면 `confirm`을 보내지 않습니다.
+맞으면 같은 운영자 계정으로 `confirm`을 보냅니다.
+```
+{ "action": "confirm", "confirmationToken": "<preview 응답의 토큰>" }
+```
+`confirm`은 다시 한 번 사본을 검증하고, 아래 경우에는 쓰지 않고 멈춥니다.
+토큰이 틀렸거나 5분이 지났거나 다른 사용자의 것 → 409 `RESTORE_PREVIEW_EXPIRED_OR_INVALID`
+미리보기 뒤 시험 정책이 바뀜 → 409 `POLICY_CHANGED_AFTER_PREVIEW`
+사본 검증 실패 → 위 표와 같은 409·404
+모두 통과하면 시험 정책의 `revision`이 읽은 값과 같을 때만 한 행을 갱신하고, 응답은 `applied:true`입니다. 갱신 결과가 쓰려던 내용과 다르거나 그 사이에 바뀌었으면 502 `POLICY_TEST_STORE_UNAVAILABLE`입니다.
+확인이 필요한 것 (README만으로는 알 수 없음)
+`restorePaths`와 `preview.changes`의 계산은 `src/policy-restore.mjs`가 합니다.
+요청 검사는 `src/resource-id.mjs`의 `RESOURCE_IDS.testPolicyRestore`와 `src/memos.mjs`의 `memosContext`를 거칩니다.
+`test_policy_snapshots`, `test_policy_state` 테이블의 마이그레이션이 저장소에 있는지 확인합니다.
+복원 경로가 엔진 판정(`decider.mjs`, `allowedRoutes`)에서 허용되는지는 별도로 확인합니다.
+로컬 파일 정책의 안전 사본 확인 (policy-guard)
+위 API와는 별개로, 저장소 파일 정책(`src/decider.mjs`, `aleph.config.json`, `supabase/migrations/*.sql`)의 안전 사본은 `scripts/policy-guard.mjs`로 확인합니다. 이 도구는 `.policy-guard/` 안에서만 쓰고 운영 정책 파일은 읽기만 합니다. 저장소 루트에서 실행합니다.
 1. 안전 정책 사본의 버전 확인
 ```
 node scripts/policy-guard.mjs verify
@@ -234,8 +235,8 @@ node scripts/policy-guard.mjs diff
 node scripts/policy-guard.mjs verify && node scripts/policy-guard.mjs diff
 ```
 4. 사람의 최종 확인 — 1번의 버전 해시와 2번의 바뀔 항목을 눈으로 확인한 뒤에만 다음 「정책 복원 방법」으로 넘어갑니다.
-정책 복원 방법 (시험 정책만)
-위 확인 1~4가 모두 끝난 뒤에만 실행합니다.
+로컬 시험 사본 되돌리기 (policy-guard)
+위 확인 1~4가 모두 끝난 뒤에만 실행합니다. 이 명령은 로컬 폴더의 시험용 사본만 지우며, 서버의 시험 정책(`test_policy_state`)과는 무관합니다.
 ```
 rm -rf .policy-guard/sim
 ```
@@ -244,11 +245,17 @@ rm -rf .policy-guard/sim
 `node scripts/policy-guard.mjs verify` 가 통과하고, 마지막 `참고:` 줄이 실제 정책 파일의 사본과의 차이를 보여 줌
 `git status` 에 정책 파일 변경이 없음 (정책 변경은 별도 커밋으로만)
 `node scripts/policy-guard.mjs diff` 는 시험용 사본이 없으므로 `시험용 사본이 없습니다`로 멈춤 (정상)
+아래 표의 P-1~P-4는 로컬 도구(policy-guard), P-5~P-9는 서버 경로(`POST /api/policies/restore`) 확인입니다.
 #	확인	결과
 P-1	사본 검증(`verify`) 통과, 버전 해시를 기록과 대조	미실행
 P-2	바뀔 항목(`diff`)이 예상한 범위뿐	미실행
 P-3	사본이 없거나 해시가 틀리면 멈추는지 (일부러 확인)	미실행
 P-4	시험 사본 폐기 뒤 `verify` 통과, `git status` 정책 파일 변경 없음	미실행
+P-5	`restoreRoute`가 배열이고 `api/policies/restore.js`가 설정 오류로 멈추지 않음 (`node --test test/policy-restore-route.test.mjs`)	미실행
+P-6	운영자가 아닌 계정으로 호출 → 403 `POLICY_RESTORE_FORBIDDEN`	미실행
+P-7	`preview`: 사본 검증을 거쳐 변경 범위(`preview.changes`)와 확인 토큰이 나옴	미실행
+P-8	없는 `version` → 404, 서명이 맞지 않는 사본 → 409, 아무것도 쓰지 않음	미실행
+P-9	`confirm`: 적용 뒤 `applied:true`. 미리보기 뒤 시험 정책이 바뀌면 409	미실행
 복원 방법 (시험 계정 B로 로그인한 상태에서)
 먼저 `{ "dryRun": true }` 로 호출합니다. 복원할 버전(ID·소유자·내용 해시)과 변경 범위(1건, update 또는 insert, 다른 메모 0건)가 나옵니다. 아무것도 쓰지 않습니다.
 보인 내용이 맞으면 `{ "confirmContentSha256": "<위에서 본 해시>" }` 로 호출합니다. 해시가 다르면 409로 멈춥니다.

@@ -18,5 +18,7 @@
     { "method": "DELETE", "path": "/api/memos/:id" }
   ],
   "originalApiUrl": "https://lcvrjogmyryihpkdpidf.supabase.co/rest/v1/memos",
-  "restoreRoute": { "method": "POST", "path": "/api/policies/restore" }
+  "restoreRoute": [
+    { "method": "POST", "path": "/api/policies/restore" }
+  ]
 }
