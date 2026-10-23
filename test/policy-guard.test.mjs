@@ -80,7 +80,9 @@ test('requires a verified snapshot and stops when a saved file hash is tampered 
 
   makeSnapshot(root);
   const copy = path.join(root, '.policy-guard/safe/files/src/decider.mjs');
-  writeFileSync(copy, '// tampered\n');
+  const tampered = readFileSync(copy);
+  tampered[0] ^= 1; // Keep the byte length fixed so this specifically exercises SHA-256 validation.
+  writeFileSync(copy, tampered);
   const blocked = run(root, 'simulate', '--file', 'src/decider.mjs', '--line', '2', '--to', "export const RULE = 'intruded';");
   assert.equal(blocked.status, 1);
   assert.match(blocked.output, /해시가 맞지 않습니다: src\/decider\.mjs/u);
@@ -128,5 +130,5 @@ test('rejects multi-line replacements and refuses to overwrite a test copy', (t)
   assert.equal(run(root, 'simulate', '--file', 'src/decider.mjs', '--line', '2', '--to', "export const RULE = 'intruded';", '--confirm', token).status, 0);
   const second = run(root, 'simulate', '--file', 'src/decider.mjs', '--line', '2', '--to', "export const RULE = 'different';");
   assert.equal(second.status, 1);
-  assert.match(second.output, /기존 시험용 사본은 덮어쓰지 않습니다/u);
+  assert.match(second.output, /시험용 사본이 이미 있습니다\. 기존 시험본은 덮어쓰지 않습니다/u);
 });
