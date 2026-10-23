@@ -1,0 +1,4 @@
+# Duplicate restore handler; the same implementation remains available at /api/restore.js.
+api/notes/restore.js
+# /api/notes/:id is rewritten to /api/notes?id=:id; keep one deployed function.
+api/notes/**
