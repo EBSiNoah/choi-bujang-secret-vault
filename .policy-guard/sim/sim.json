@@ -1,0 +1,46 @@
+{
+  "baseVersionId": "b1fa7f35c249bfcb183ddb9d4fcf2fa8b1340734752ecea26314b440e8cbe72f",
+  "change": {
+    "file": "src/decider.mjs",
+    "line": 17,
+    "from": "",
+    "to": "const HACKED=['virus'];"
+  },
+  "files": [
+    {
+      "path": "aleph.config.json",
+      "sha256": "3ead321d599376b950018b3b3182fb0fe5f4866b43e09e0e14c64bf8ba2192ed",
+      "bytes": 1091
+    },
+    {
+      "path": "src/decider.mjs",
+      "sha256": "ac7e5cc5f87c3b8af37e4b3fb3143da5165f99dbfb576b2e244b9ad29dab95eb",
+      "bytes": 5135
+    },
+    {
+      "path": "supabase/migrations/20261006000100_create_training_notes.sql",
+      "sha256": "c6ffbf86a94bd2c21e436461fd91934a9a179a83c7b40ac839f82a5fb41830f5",
+      "bytes": 893
+    },
+    {
+      "path": "supabase/migrations/20261007000000_create_memos.sql",
+      "sha256": "ef1ddf528bb3b6b36faf0750fc5538fd9dc43176a27fd5426af9a2ef72d9e412",
+      "bytes": 584
+    },
+    {
+      "path": "supabase/migrations/20261008000000_create_instructors.sql",
+      "sha256": "92f416e16c32754dd70a6dff401e4a5069bf3dfd16f481acff758d57a2c9b1a0",
+      "bytes": 374
+    },
+    {
+      "path": "supabase/migrations/20261016000100_create_test_policy_restore.sql",
+      "sha256": "5e00c253b4ad1d0c5ba94c7012d5a052161fd7b274dc61eff56bedbe0a114086",
+      "bytes": 1047
+    },
+    {
+      "path": "supabase/migrations/20261017000000_create_memo_backups",
+      "sha256": "7ffd8c40e28206631ec295582054b8974a51c7b9ca7cea76f003a8781b72fab8",
+      "bytes": 1478
+    }
+  ]
+}
