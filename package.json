@@ -7,6 +7,7 @@
     "test:r5": "node --test test/r5.test.mjs",
     "test:package": "node --test test/package-starter.test.mjs",
     "test:policy-guard": "node --test test/policy-guard.test.mjs",
+    "test:policy-restore": "node --test test/policy-restore.test.mjs test/policy-restore-api.test.mjs",
     "bundle": "node scripts/bundle.mjs",
     "decider:test": "node scripts/decider-test.mjs",
     "detect:test": "node scripts/detect-test.mjs",
