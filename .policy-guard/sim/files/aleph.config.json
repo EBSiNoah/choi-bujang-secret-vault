@@ -1,0 +1,26 @@
+{
+  "step": 10,
+  "repoUrl": "https://github.com/EBSiNoah/choi-bujang-secret-vault.git",
+  "publicAppUrl": "https://choi-bujang-secret-vault-gold.vercel.app",
+  "judgeIssuer": "https://aleph-judge-production.up.railway.app/defense/judge",
+  "sampleMarker": "SAMPLE_NOTE_1",
+  "identityProvider": {
+    "issuer": "https://lcvrjogmyryihpkdpidf.supabase.co/auth/v1",
+    "jwksUrl": "https://lcvrjogmyryihpkdpidf.supabase.co/auth/v1/.well-known/jwks.json",
+    "audience": "authenticated"
+  },
+  "allowedRoutes": [
+    { "method": "GET", "path": "/api/notes" },
+    { "method": "GET", "path": "/api" },
+    { "method": "GET", "path": "/api/notes/:id" },
+    { "method": "GET", "path": "/api/memos/:id" },
+    { "method": "PUT", "path": "/api/memos/:id" },
+    { "method": "DELETE", "path": "/api/memos/:id" },
+    { "method": "POST", "path": "/api/policies/restore" },
+    { "method": "POST", "path": "/api/memos/:id/restore" }
+  ],
+  "originalApiUrl": "https://lcvrjogmyryihpkdpidf.supabase.co/rest/v1/memos",
+  "restoreRoute": [
+    { "method": "POST", "path": "/api/policies/restore" }
+  ]
+}
