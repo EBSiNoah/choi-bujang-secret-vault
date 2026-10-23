@@ -1,90 +1,106 @@
-import { readFileSync } from 'node:fs';
-import { createLoginVerifier } from '../src/verify-login.mjs';
+import { isUuid, memosContext } from '../src/memos.mjs';
+import { isInstructor } from '../src/instructors.mjs';
 import { requireResourceId, RESOURCE_IDS } from '../src/resource-id.mjs';
 
-const config = JSON.parse(
-  readFileSync(new URL('../aleph.config.json', import.meta.url), 'utf8'),
-);
-
-// 서버 런타임에서 한 번만 만듭니다. 설정이 잘못되면 요청 때 500 으로 답합니다.
-let verifyLogin;
-function getVerifier() {
-  verifyLogin ??= createLoginVerifier({
-    config,
-    supabaseSecretKey: process.env.SUPABASE_SECRET_KEY,
-  });
-  return verifyLogin;
+function parseNote(body) {
+  if (!body || typeof body !== 'object') return null;
+  const title = typeof body.title === 'string' ? body.title.trim() : '';
+  if (!title || title.length > 200
+      || typeof body.content !== 'string' || body.content.length > 5000) {
+    return null;
+  }
+  return { title, content: body.content };
 }
 
 export default async function handler(request, response) {
   response.setHeader('Cache-Control', 'no-store');
   if (!requireResourceId(request, response, RESOURCE_IDS.instructorAnnouncements)) return;
 
-  if (request.method !== 'GET') {
-    response.setHeader('Allow', 'GET');
-    return response.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
-  }
+  // GET /api/notes and GET|PUT /api/notes/:id are routed to this one function.
+  const id = request.query?.id;
+  const hasId = id !== undefined;
+  const methods = hasId ? ['GET', 'PUT'] : ['GET'];
+  const ctx = await memosContext(request, response, methods);
+  if (!ctx) return;
 
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const secretKey = process.env.SUPABASE_SECRET_KEY;
-
-  if (!supabaseUrl || !secretKey) {
-    return response.status(500).json({ error: 'SERVER_CONFIGURATION_ERROR' });
-  }
-
-  let endpoint;
-  try {
-    const base = new URL(supabaseUrl);
-    if (base.protocol !== 'https:') throw new Error();
-    endpoint = new URL('/rest/v1/training_notes', base);
-    endpoint.searchParams.set('select', 'owner_id,title,content');
-    endpoint.searchParams.set('owner_id', 'is.null');
-    endpoint.searchParams.set('order', 'id.asc');
-  } catch {
-    return response.status(500).json({ error: 'SERVER_CONFIGURATION_ERROR' });
-  }
-
-  let verify;
-  try {
-    verify = getVerifier();
-  } catch {
-    return response.status(500).json({ error: 'SERVER_CONFIGURATION_ERROR' });
-  }
-
-  // 로그인 확인: Authorization 헤더의 토큰만 검사합니다.
-  // 요청의 userId·role 같은 값은 읽지 않습니다. 검사 결과(identity)만 믿습니다.
-  // 토큰이 없거나 검사에 실패하면 자료를 읽기 전에 거부합니다.
-  const identity = await verify(request.headers.authorization);
-  if (!identity) {
-    return response.status(401).json({ error: 'LOGIN_REQUIRED' });
-  }
+  const unavailable = () => response.status(502).json({ error: 'NOTES_SERVICE_UNAVAILABLE' });
 
   try {
-    const upstream = await fetch(endpoint, {
-      headers: {
-        apikey: secretKey,
-        Accept: 'application/json',
+    if (!hasId) {
+      const upstream = await ctx.rest(
+        'training_notes?select=owner_id,title,content&owner_id=is.null&order=id.asc',
+      );
+      if (!upstream.ok) return unavailable();
+
+      const rows = await upstream.json();
+      if (!Array.isArray(rows) ||
+          rows.some(row => typeof row.title !== 'string' ||
+                           typeof row.content !== 'string')) {
+        return response.status(502).json({ error: 'INVALID_NOTES_RESPONSE' });
+      }
+
+      return response.status(200).json({
+        notes: rows.map(({ title, content }) => ({ title, content })),
+      });
+    }
+
+    if (!isUuid(id)) return response.status(404).json({ error: 'NOT_FOUND' });
+    const where = `id=eq.${encodeURIComponent(id)}&owner_id=is.null`;
+
+    if (request.method === 'GET') {
+      const upstream = await ctx.rest(
+        `training_notes?select=id,owner_id,title,content&${where}`,
+      );
+      if (!upstream.ok) return unavailable();
+      const rows = await upstream.json();
+      const note = Array.isArray(rows)
+        ? rows.find(row => row?.id === id && row?.owner_id === null) : null;
+      if (!note) return response.status(404).json({ error: 'NOT_FOUND' });
+      if (typeof note.title !== 'string' || typeof note.content !== 'string') {
+        return unavailable();
+      }
+      return response.status(200).json({
+        id: note.id,
+        title: note.title,
+        content: note.content,
+      });
+    }
+
+    const note = parseNote(request.body);
+    if (!note) return response.status(400).json({ error: 'INVALID_NOTE' });
+
+    let instructor;
+    try {
+      instructor = await isInstructor(ctx.rest, ctx.userId);
+    } catch {
+      return response.status(502).json({ error: 'INSTRUCTOR_SERVICE_UNAVAILABLE' });
+    }
+    if (!instructor) {
+      return response.status(403).json({ error: 'INSTRUCTOR_REQUIRED' });
+    }
+
+    const upstream = await ctx.rest(
+      `training_notes?select=id,owner_id,title,content&${where}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+        body: JSON.stringify(note),
       },
-      cache: 'no-store',
-      signal: AbortSignal.timeout(8000),
-    });
-
-    if (!upstream.ok) {
-      return response.status(502).json({ error: 'NOTES_SERVICE_UNAVAILABLE' });
-    }
-
+    );
+    if (!upstream.ok) return unavailable();
     const rows = await upstream.json();
-    if (!Array.isArray(rows) ||
-        rows.some(row => typeof row.title !== 'string' ||
-                         typeof row.content !== 'string')) {
-      return response.status(502).json({ error: 'INVALID_NOTES_RESPONSE' });
+    const updated = Array.isArray(rows)
+      ? rows.find(row => row?.id === id && row?.owner_id === null) : null;
+    if (!updated) return response.status(404).json({ error: 'NOT_FOUND' });
+    if (typeof updated.title !== 'string' || typeof updated.content !== 'string') {
+      return unavailable();
     }
-
     return response.status(200).json({
-      notes: rows.map(({ title, content }) => ({ title, content })),
+      id: updated.id,
+      title: updated.title,
+      content: updated.content,
     });
   } catch {
-    // 키나 Supabase 오류 내용을 응답·로그에 남기지 않습니다.
-    return response.status(502).json({ error: 'NOTES_SERVICE_UNAVAILABLE' });
+    return unavailable();
   }
 }
