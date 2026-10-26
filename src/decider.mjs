@@ -81,6 +81,10 @@ function isAllowedResourceRoute(request) {
   }
 
   if (request.service === 'notes') {
+    if (request.method === 'POST') {
+      return /^\/api\/notes\/[^/]+\/restore$/u.test(request.path)
+        && request.route === 'POST /api/notes/:id/restore';
+    }
     if (request.method !== 'GET') return false;
     if (request.path === '/api/notes') return request.route === 'GET /api/notes';
     return (/^\/notes\/[^/]+$/u.test(request.path)
