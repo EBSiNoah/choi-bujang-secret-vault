@@ -185,13 +185,13 @@ npm run decider:test
 
 ### 시험 정책 복원은 메모 한 건 복원과 별도 절차입니다
 
-`POST /api/policies/restore`는 서명된 안전 사본을 확인한 뒤 `test_policy_state`의 시험 정책에서 요청에 명시된 경로만 미리보기하고, 운영자의 별도 확인이 있을 때 그 범위만 적용합니다. 이 API는 `memo_backups`나 `memos`를 읽거나 복원하지 않으며, 메모 복원 감사 기록도 수정하지 않습니다. 선택하지 않은 규칙은 현재 값을 그대로 보존하고, 서비스 규칙과 감사 이력 관련 경로·값은 복원 범위로 허용하지 않습니다. 따라서 메모 내용 복원은 아래의 B 계정 메모 한 건 절차를, 정책 복원은 다음 시험 정책 절차를 각각 따르며 서로의 확인값을 섞지 않습니다.
+`POST /api/policies/restore`는 서명된 안전 사본을 확인한 뒤 `test_policy_state`의 시험 정책에서 요청에 명시된 경로만 미리보기하고, 운영자의 별도 확인이 있을 때 그 범위만 적용합니다. 이 API는 `memo_backups`나 `memos`를 읽거나 복원하지 않으며, 메모 복원 감사 기록도 수정하지 않습니다. 선택하지 않은 규칙은 현재 값을 그대로 보존하고, 서비스 규칙과 감사 이력 관련 경로·값은 복원 범위에서 제외됩니다. 따라서 메모 내용 복원은 아래의 B 계정 메모 한 건 절차를, 정책 복원은 다음 시험 정책 절차를 각각 따르며 서로의 확인값을 섞지 않습니다.
 
 ## 시험 정책 복원 전 확인 (사본 검증 · 실패 시 중단 · 변경 범위)
 
 `POST /api/policies/restore`는 시험 정책만 복원합니다. 이 경로가 읽고 쓰는 곳은 Supabase의 `test_policy_snapshots`(안전 정책 사본)와 `test_policy_state`(시험 정책, 한 행)이고, 쓰기는 `test_policy_state`의 그 한 행뿐입니다. 복원은 두 단계(`preview` → `confirm`)이며, `preview`가 복원할 사본의 버전과 바뀔 항목을 먼저 보여 줍니다. 메모 백업 테이블이나 메모 데이터는 이 절차의 대상이 아닙니다.
 호출할 수 있는 사람: 로그인한 사용자 ID가 서버 환경변수 `POLICY_RESTORE_OPERATOR_ID`와 같은 운영자 한 명뿐입니다. 다르면 403 `POLICY_RESTORE_FORBIDDEN`입니다. `POLICY_SNAPSHOT_HMAC_KEY`(32바이트 이상)도 서버 환경변수로 필요하며, 두 값은 README, 코드, Git에 적지 않습니다.
-`aleph.config.json`의 `restoreRoute`는 실제 정책 경로인 `POST /api/policies/restore`를 가리킵니다. 정책 복원 경로는 메모 복원 경로 `POST /api/memos/:id/restore`와 다릅니다.
+`aleph.config.json`의 `restoreRoute` 배열에는 정책 복원 경로인 `POST /api/policies/restore`만 둡니다. 메모 복원 `POST /api/memos/:id/restore`는 `allowedRoutes`의 별도 항목이며 `restoreRoute`에는 넣지 않습니다. 두 경로는 각각 시험 정책 복원과 메모 한 건 복원에만 사용됩니다.
 `preview` 요청
 ```
 { "action": "preview", "version": "<안전 정책 사본의 버전>", "restorePaths": [ ... ] }
